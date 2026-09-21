@@ -1,0 +1,45 @@
+# Rust / build
+target/
+build/
+dist/
+*.so
+*.egg-info/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+pytest-cache-files-*/
+
+# Docs
+docs/_render/
+site/
+
+# macOS
+.DS_Store
+
+# Local scratch / sidecars (not part of the repo)
+/alignment.fasta
+/alignment.png
+/masked.fasta
+*.craic.json
+*.craic-history.txt
+
+# Benchmark data (downloaded) and result CSVs (generated) - not part of the repo
+/BAliBASE_R10.tar.gz
+/RV100/
+/balibase*.csv
+/sim_results.csv
+/benchmark_results.csv
+/aligned_out/
+
+# generated macOS app bundle (build with scripts/make_app.py)
+CRAIC.app/
+
+# Editor / OS sidecars
+~$*
+.fuse_hidden*
+
+# Manuscript drafts and backups (not part of the released code)
+/paper/

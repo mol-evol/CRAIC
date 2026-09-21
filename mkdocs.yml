@@ -1,0 +1,96 @@
+site_name: CRAIC
+site_description: "CRAIC — Conserved-Region Alignment by Iterative Convergence"
+site_url: "https://mol-evol.github.io/craic/"
+repo_url: "https://github.com/mol-evol/craic"
+repo_name: "mol-evol/craic"
+edit_uri: "edit/main/docs/"
+docs_dir: docs
+use_directory_urls: true
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - toc.follow
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - Background & intent: background.md
+  - Installation: installation.md
+  - Getting started: getting-started.md
+  - Tutorial: tutorial.md
+  - User guide:
+      - The alignment viewer: guide/viewer.md
+      - Ambiguity tools: guide/ambiguity-tools.md
+      - Figures, reports & curation: guide/figures-and-curation.md
+      - Teaching with a known answer: guide/teaching.md
+      - Sessions & unsaved work: guide/sessions.md
+  - Methods & evidence:
+      - Concepts & methods: concepts.md
+      - Methods in full: methods.md
+      - Validation: validation.md
+      - Limitations: limitations.md
+  - Reference:
+      - Interface: reference/interface.md
+      - Command line: reference/command-line.md
+      - Engines & file formats: reference/engines-and-formats.md
+      - Keyboard & mouse: reference/shortcuts.md
+      - Python API: reference/api.md
+  - Help:
+      - FAQ & troubleshooting: faq.md
+      - Glossary: glossary.md
+  - Architecture & development: development.md
+  - Editing these docs: editing-docs.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - footnotes
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  # The API reference (docs/reference/api.md) is generated from the docstrings.
+  # Needs `pip install "mkdocstrings[python]"`, and the docs must be built from an
+  # environment where `craic` is importable.
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["."]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            heading_level: 3
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            filters: ["!^_"]

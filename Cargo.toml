@@ -1,0 +1,17 @@
+[package]
+name = "craic_accel"
+version = "0.5.9"
+edition = "2021"
+
+[lib]
+name = "_accel"
+crate-type = ["cdylib"]
+
+[dependencies]
+# abi3-py39: build against the stable Python ABI so one wheel per platform
+# works on CPython 3.9 and newer.
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+
+[profile.release]
+opt-level = 3
+lto = true

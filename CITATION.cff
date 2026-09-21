@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use CRAIC in your research, please cite it."
+title: "CRAIC: Conserved-Region Alignment by Iterative Convergence"
+abstract: >-
+  CRAIC is a desktop multiple sequence alignment workbench focused on alignment
+  uncertainty: it surfaces per-column and per-residue reliability, multi-aligner
+  disagreement, and posterior homology, and supports interactive curation,
+  codon/amino-acid views, annotations, and masking.
+type: software
+authors:
+  - family-names: McInerney
+    given-names: James
+repository-code: "https://github.com/mol-evol/craic"
+url: "https://mol-evol.github.io/craic/"
+license: MIT
+version: 0.5.1

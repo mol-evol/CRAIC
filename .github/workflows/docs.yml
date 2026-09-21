@@ -1,0 +1,28 @@
+name: Docs
+
+# Build the MkDocs site and publish it to GitHub Pages (the gh-pages branch).
+on:
+  push:
+    branches: [main]
+    # The API reference is generated from the docstrings, so a change to the
+    # package changes the site too.
+    paths: ["docs/**", "mkdocs.yml", "craic/**", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write          # mkdocs gh-deploy pushes to the gh-pages branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # mkdocstrings imports the package to read its docstrings, so CRAIC and its
+      # runtime dependencies have to be installed — not just the docs toolchain.
+      - run: pip install mkdocs-material "mkdocstrings[python]"
+      - run: pip install -e .
+      - run: mkdocs build --strict        # fail on broken links / nav before publishing
+      - run: mkdocs gh-deploy --force

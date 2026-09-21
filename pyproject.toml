@@ -1,0 +1,81 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "craic-msa"
+version = "0.5.9"
+description = "CRAIC: a multiple sequence alignment workbench built for ambiguous regions"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "James McInerney" }]
+maintainers = [{ name = "James McInerney" }]
+keywords = [
+    "bioinformatics", "multiple sequence alignment", "MSA", "phylogenetics",
+    "alignment uncertainty", "masking", "codon", "GUI", "teaching",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Console",
+    "Intended Audience :: Education",
+]
+dependencies = [
+    "numpy>=1.21",
+    "biopython>=1.79",
+    "PySide6>=6.5,<7",
+    # macOS-only: lets the app show "CRAIC" in the application menu and come to
+    # the foreground when launched from a terminal. Harmless to omit elsewhere.
+    "pyobjc-framework-Cocoa>=9.0; sys_platform == 'darwin'",
+]
+
+[project.urls]
+Homepage = "https://github.com/mol-evol/craic"
+Repository = "https://github.com/mol-evol/craic"
+Documentation = "https://mol-evol.github.io/craic/"
+Issues = "https://github.com/mol-evol/craic/issues"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24"]
+# SciPy enables the sparse consistency transformation, which is what lets the
+# built-in aligner use consistency on larger families (it holds a few per cent of
+# the memory the dense transform needs). Everything works without it.
+speed = ["scipy>=1.7"]
+
+[project.scripts]
+craic = "craic.cli:main"
+
+[tool.maturin]
+# Mixed Rust/Python layout: the `craic/` Python package gets a compiled
+# `craic._accel` extension built from src/lib.rs.
+python-source = "."
+module-name = "craic._accel"
+# abi3 → one wheel per platform works on CPython 3.9+ (simpler releases).
+features = ["pyo3/extension-module", "pyo3/abi3-py39"]
+# python-source="." makes the repo root the sdist root, so be explicit about
+# what must NOT ship: build output, the venv, dev launchers, the local-update
+# script (which is machine-specific), and scratch data files.
+exclude = [
+    ".venv/**", "target/**", "site/**", ".git/**", ".github/**",
+    "packaging/**", "pytest-cache-files-*/**", ".pytest_cache/**",
+    "*.command", "update.sh", "build_rust.sh",
+    "alignment.fasta", "masked.fasta", "alignment.png",
+    ".DS_Store", "**/.DS_Store",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# Correctness-focused gate: pyflakes (unused imports/vars, undefined names) and
+# a few real-bug pycodestyle checks. Deliberately NOT enforcing stylistic rules
+# (multiple-statement lines, line length) that the codebase uses intentionally.
+select = ["F", "E711", "E712", "E713", "E714", "E722", "E9"]
