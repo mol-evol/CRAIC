@@ -90,6 +90,16 @@ weak column in amber, laid out on the macOS icon grid. It is drawn in code, so t
 running app and the downloadable apps (which had PyInstaller's default icon) use the
 same one. The install guide now gives macOS 15's way of opening an unsigned app.
 
+**`craic make-app`** (macOS) builds a double-clickable CRAIC.app in `~/Applications`
+that runs the Python it was made from. Made on the user's own Mac, it is never marked
+as downloaded, so Gatekeeper does not block it, which the ready-made download cannot
+avoid without a paid Apple signature. It replaces `scripts/make_app.py`, which only
+existed in the repository, so pip users could not reach it.
+
+**CI's NumPy-fallback job failed** before running a test: `pytest` (unlike
+`python -m pytest`) does not put the project folder on the path, and that job does not
+install CRAIC. `pyproject.toml` now sets `pythonpath = ["."]` for pytest.
+
 **Raw results.** `benchmarks/results/` now holds the PRANK re-run (in place of
 the old PRANK rows in `balibase_official.csv` and `prank_percol.csv`) and the
 residue-masking runs (`residue_masking_nj.csv`, `residue_masking_ml.csv`); its

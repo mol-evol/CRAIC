@@ -983,3 +983,29 @@ def test_citation_is_the_same_everywhere():
 
     for name in ("README.md", "docs/about.md"):
         assert norm(CITATION) in norm((root / name).read_text(encoding="utf-8")), name
+
+
+def test_make_app_refuses_off_macos(monkeypatch, capsys):
+    from craic import cli
+
+    monkeypatch.setattr("sys.platform", "linux")
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["make-app", "--dest", "unused"])
+    assert exc.value.code == 1
+    assert "only runs on a Mac" in capsys.readouterr().err
+
+
+def test_make_app_bundle_launches_this_python(tmp_path):
+    import plistlib
+    import sys
+
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from craic import __version__, macapp
+
+    app, _ = macapp.build(tmp_path)          # no iconutil off macOS: the icon is skipped
+    info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    assert info["CFBundleExecutable"] == "CRAIC"
+    assert info["CFBundleShortVersionString"] == __version__
+    launcher = (app / "Contents" / "MacOS" / "CRAIC").read_text()
+    assert f'exec "{sys.executable}" -m craic' in launcher

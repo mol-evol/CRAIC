@@ -38,13 +38,22 @@ jobs:
       - name: Install CRAIC (builds the Rust core) + PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install . pyinstaller
+          pip install . pyinstaller pillow
+
+      # The app's own icon (drawn by craic.gui.app._make_app_icon). PyInstaller
+      # turns the PNG into .icns / .ico with Pillow.
+      - name: Render the app icon
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -c "from craic.gui.app import write_app_icon; write_app_icon('craic-icon.png')"
 
       # Bundle. --windowed = no console window; we explicitly pull in the compiled
       # Rust extension and Biopython's data files (BLOSUM62 etc.).
       - name: Build bundle
         run: >-
           pyinstaller --noconfirm --clean --windowed --name CRAIC
+          --icon craic-icon.png
           --hidden-import craic._accel
           --collect-binaries craic
           --collect-data Bio

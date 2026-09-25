@@ -1,7 +1,9 @@
 name: Build & publish wheels
 
 # Build wheels + sdist on every tag, and publish them to PyPI when the tag is a
-# version tag (e.g. v0.1.0). Wheels are abi3, so one per platform covers CPython 3.9+.
+# version tag (e.g. v0.1.0), or when the workflow is run by hand from the Actions
+# tab (to retry a release whose tagged run failed). Wheels are abi3, so one per
+# platform covers CPython 3.9+.
 on:
   push:
     tags: ["v*"]
@@ -23,19 +25,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # A universal2 wheel is built for both Mac architectures, so both Rust
+      # targets must be installed.
+      - name: Add the Intel and Apple Silicon Rust targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           # Linux builds inside a manylinux container with Rust preinstalled.
-          # macOS builds a universal2 wheel (Intel + Apple Silicon).
+          # macOS builds a universal2 wheel (Intel + Apple Silicon); maturin
+          # only knows it by its full name, universal2-apple-darwin.
           args: >-
             --release --out dist
-            ${{ runner.os == 'macOS' && '--target universal2' || '' }}
+            ${{ runner.os == 'macOS' && '--target universal2-apple-darwin' || '' }}
           manylinux: auto
       - name: Smoke-test the built wheel (imports + Rust core present)
+        shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install --no-index --find-links=dist craic-msa
+          # The wheel from dist/ (not PyPI), plus numpy, which is all this check
+          # imports; --no-index alone would fail on the other dependencies.
+          pip install --no-index --no-deps --find-links=dist craic-msa
+          pip install numpy
+          # Run from outside the checkout, or Python imports the source tree
+          # (which has no compiled core) instead of the installed wheel.
+          cd "$RUNNER_TEMP"
           python -c "import craic, craic.accel as a; print('version', craic.__version__, 'backend', a.backend()); assert a.backend() == 'rust', 'published wheel must bundle the Rust core'"
       - uses: actions/upload-artifact@v4
         with:
@@ -56,7 +71,9 @@ jobs:
         run: |
           f=$(ls dist/*.tar.gz)
           echo "sdist contents:"; tar tzf "$f"
-          if tar tzf "$f" | grep -E 'update\.sh|\.command$|alignment\.(fasta|png)|masked\.fasta'; then
+          # scratch files are only a problem at the top level (docs/assets has a
+          # legitimate true-alignment.png)
+          if tar tzf "$f" | grep -E '(^|/)update\.sh$|\.command$|^[^/]+/(alignment\.(fasta|png)|masked\.fasta)$'; then
             echo "ERROR: a dev/scratch file leaked into the sdist"; exit 1; fi
           if tar xzOf "$f" | grep -q "CloudStorage\|/Users/mbzjom"; then
             echo "ERROR: a private local path leaked into the sdist"; exit 1; fi
@@ -70,7 +87,7 @@ jobs:
     name: Publish to PyPI
     needs: [wheels, sdist]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     environment: pypi
     permissions:
       id-token: write          # PyPI Trusted Publishing (no token needed)

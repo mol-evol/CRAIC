@@ -73,6 +73,12 @@ exclude = [
     ".DS_Store", "**/.DS_Store",
 ]
 
+[tool.pytest.ini_options]
+# Import craic from this folder when it is not installed: CI's NumPy-fallback job
+# installs only the dependencies, and `pytest` (unlike `python -m pytest`) does
+# not put the current folder on the path.
+pythonpath = ["."]
+
 [tool.ruff]
 line-length = 100
 

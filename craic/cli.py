@@ -204,6 +204,15 @@ def cmd_engines(args) -> int:
     return 0
 
 
+def cmd_make_app(args) -> int:
+    """Build CRAIC.app on this Mac (see craic.macapp)."""
+    from pathlib import Path
+
+    from . import macapp
+
+    return macapp.main(Path(args.dest).expanduser() if args.dest else macapp.DEFAULT_DEST)
+
+
 def cmd_codes(args) -> int:
     """The genetic-code tables, so that --code N does not need a web search."""
     from .domain import genetic_codes
@@ -373,7 +382,8 @@ def cmd_session(args) -> int:
 # Argument parsing
 # --------------------------------------------------------------------------- #
 
-_SUBCOMMANDS = ("align", "score", "mask", "trim", "simulate", "session", "codes", "engines")
+_SUBCOMMANDS = ("align", "score", "mask", "trim", "simulate", "session", "codes", "engines",
+                "make-app")
 
 
 def _add_common(p, alphabet: bool = True) -> None:
@@ -489,6 +499,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--unaligned", help="also write the unaligned sequences here")
     p.add_argument("--format", help="output format (default: from the extension)")
     p.set_defaults(func=cmd_simulate)
+
+    p = sub.add_parser("make-app",
+                       help="macOS: build a double-clickable CRAIC.app for this Python "
+                            "(no Gatekeeper warning, because it is made on your Mac)")
+    p.add_argument("--dest", help="folder to put CRAIC.app in (default: ~/Applications)")
+    p.set_defaults(func=cmd_make_app)
 
     p = sub.add_parser("session", help="describe a saved session, or export its alignment")
     p.add_argument("input", help="a .craic.json session document")

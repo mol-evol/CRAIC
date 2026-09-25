@@ -30,18 +30,19 @@ slower.
 
 ## A double-clickable app (macOS)
 
-Launched with `python -m craic`, macOS shows the Python executable (e.g. *python3.13*) in the
-Dock and app switcher, because a bare script isn't an application bundle. To get a proper
-**CRAIC** name and icon everywhere — and a Finder/Dock launcher — build a small `.app`:
+Launched with `craic` or `python -m craic`, macOS shows the Python executable (e.g.
+*python3.13*) in the Dock and app switcher, because a bare script isn't an application
+bundle. To get a proper **CRAIC** name and icon everywhere, and a Finder/Dock launcher,
+build a small `.app`:
 
 ```bash
-python scripts/make_app.py        # writes CRAIC.app in the project root
+craic make-app        # writes CRAIC.app into ~/Applications
 ```
 
-It wires the bundle to the Python you ran it with, so use the interpreter that has CRAIC
-installed (e.g. `.venv/bin/python scripts/make_app.py`). Re-run it if you move the project or
-change environments. Drag the resulting `CRAIC.app` to your Dock or `/Applications`. (The
-bundle is git-ignored; the script is the source of truth.)
+It wires the app to the Python you ran it with, so run it from the environment that has
+CRAIC installed (e.g. `.venv/bin/craic make-app`). Re-run it if you move or delete that
+environment. Because it is built on your Mac rather than downloaded, macOS doesn't block
+it. See [`craic make-app`](reference/command-line.md#craic-make-app).
 
 The status bar shows **`core: rust`** once the native core is built, otherwise **`core: numpy`**.
 

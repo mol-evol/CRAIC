@@ -61,6 +61,21 @@ with its range and default.
 craic engines
 ```
 
+## `craic make-app`
+
+macOS only. Builds a double-clickable **CRAIC.app** that starts CRAIC with the Python
+you ran the command with, and puts it in `~/Applications` (or `--dest FOLDER`). Because
+the app is made on your own Mac rather than downloaded, macOS doesn't block it, and it
+gives CRAIC its own name and icon in the Dock.
+
+```bash
+pip install craic-msa
+craic make-app
+```
+
+Run it again if you move or delete that Python environment. The app keeps a log of
+anything that goes wrong at launch in `~/Library/Logs/CRAIC.log`.
+
 ## `craic codes`
 
 List the NCBI genetic-code tables, so `--code N` does not need a web search.

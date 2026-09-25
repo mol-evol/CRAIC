@@ -2593,9 +2593,7 @@ def write_app_icon(path, side=1024):
     """Save the app icon as a PNG. The release build hands it to PyInstaller for
     the downloadable apps; needs a Qt application, and makes one if there is none
     (run with QT_QPA_PLATFORM=offscreen where there is no display)."""
-    from PySide6.QtGui import QGuiApplication
-
-    app = QGuiApplication.instance() or QGuiApplication([])  # noqa: F841 - Qt must exist to draw
+    app = QApplication.instance() or QApplication([])  # noqa: F841 - Qt must exist to draw
     if not _make_app_icon(side).save(str(path), "PNG"):
         raise OSError(f"could not write the icon to {path}")
 

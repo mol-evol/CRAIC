@@ -197,6 +197,7 @@ needed:
 pip install craic-msa
 craic                                 # launch the GUI
 craic examples/coding_genes.fasta     # …or open a file
+craic make-app                        # macOS: a CRAIC.app in ~/Applications, no security warning
 ```
 
 On Linux, PySide6 needs a few Qt system libraries:

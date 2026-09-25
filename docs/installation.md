@@ -38,6 +38,10 @@ here's how to get past it:
     After that it opens normally. (On macOS 14 and earlier, right-click the app and
     choose **Open** instead; macOS 15 removed that shortcut.)
 
+    **No warning at all:** if you have Python, install from PyPI (below) and run
+    `craic make-app`. It builds the app on your own Mac, so macOS never marks it as
+    downloaded.
+
     If macOS says the app is "damaged" or won't open, clear the quarantine flag in
     Terminal (this is safe — it only removes the download-quarantine attribute):
 
