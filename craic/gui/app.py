@@ -2536,39 +2536,68 @@ def _bring_to_front(win):
 
 
 def _make_app_icon(side=512):
-    """A small alignment-motif app icon drawn at runtime (no asset file needed):
-    a dark rounded tile with a few rows of coloured 'alignment' cells. ``side`` lets
-    the .app builder request crisp large sizes for the .icns."""
+    """The app icon, drawn at runtime so there is no asset file to keep in step: a
+    dark teal tile holding a grid of alignment cells over a reliability track, with
+    one weak column picked out in amber, its bar dipping. Laid out on the macOS
+    grid (a 10% margin round the tile) so it sits right beside other Dock icons.
+    ``side`` lets the builders ask for crisp large sizes."""
     from PySide6.QtCore import QRectF, Qt
-    from PySide6.QtGui import QColor, QPainter, QPixmap
+    from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPixmap
 
-    u = side / 512.0
+    u = side / 1024.0
     pm = QPixmap(side, side)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing, True)
     p.setPen(Qt.NoPen)
-    p.setBrush(QColor("#12161b"))
-    p.drawRoundedRect(QRectF(24 * u, 24 * u, side - 48 * u, side - 48 * u), 96 * u, 96 * u)
-    p.setBrush(QColor("#1b2027"))
-    p.drawRoundedRect(QRectF(42 * u, 42 * u, side - 84 * u, side - 84 * u), 78 * u, 78 * u)
 
-    cols, rows = 5, 4
-    palette = ["#57c7a3", "#e0b23a", "#5a9bd4", "#d46a6a", "#9b7ede"]
-    gap_cells = {(0, 3), (2, 1), (3, 4)}                # a few 'gaps' for MSA flavour
-    margin = 104 * u
-    grid = side - 2 * margin
-    cw, ch = grid / cols, grid / rows
-    px, py = cw * 0.16, ch * 0.16
-    for r in range(rows):
-        for c in range(cols):
-            rect = QRectF(margin + c * cw + px / 2, margin + r * ch + py / 2,
-                          cw - px, ch - py)
-            p.setBrush(QColor("#2a313a") if (r, c) in gap_cells
-                       else QColor(palette[(c + r) % len(palette)]))
-            p.drawRoundedRect(rect, 12 * u, 12 * u)
+    tile = QRectF(100 * u, 92 * u, 824 * u, 824 * u)
+    for i in range(14):                                  # soft drop shadow
+        p.setBrush(QColor(0, 0, 0, int(10 * (1 - i / 14))))
+        p.drawRoundedRect(tile.adjusted(-i * u, (14 - i) * u, i * u, (14 + i) * u),
+                          (185 + i) * u, (185 + i) * u)
+    grad = QLinearGradient(tile.topLeft(), tile.bottomLeft())
+    grad.setColorAt(0, QColor("#1d3e48"))
+    grad.setColorAt(1, QColor("#0b171c"))
+    p.setBrush(QBrush(grad))
+    p.drawRoundedRect(tile, 185 * u, 185 * u)
+    p.setPen(QPen(QColor(255, 255, 255, 28), 3 * u))    # faint rim
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(tile.adjusted(2 * u, 2 * u, -2 * u, -2 * u), 183 * u, 183 * u)
+    p.setPen(Qt.NoPen)
+
+    amber, teal = QColor("#f2a93b"), QColor("#45b8a6")
+    light, mint = QColor("#e4edf0"), QColor("#8fd3c7")  # two quiet residue tones
+    weak = 3                                             # the column the score doubts
+    rows = ["ACGTTA", "ACCTTA", "AGGATA", "ACGTCA"]
+    x0, cw, ch, y0 = 232 * u, 560 * u / 6, 74 * u, 262 * u
+    for r, seq in enumerate(rows):
+        for c, res in enumerate(seq):
+            if c == weak:
+                col = amber.darker(170) if r in (1, 3) else amber
+            else:
+                col = mint if res in "AG" else light
+            p.setBrush(col)
+            p.drawRoundedRect(QRectF(x0 + c * cw + 7 * u, y0 + r * (ch + 14 * u),
+                                     cw - 14 * u, ch), 14 * u, 14 * u)
+    base = 800 * u                                       # the reliability track
+    for c, h in enumerate([0.9, 0.95, 0.85, 0.28, 0.92, 0.88]):
+        p.setBrush(amber if c == weak else teal)
+        p.drawRoundedRect(QRectF(x0 + c * cw + 16 * u, base - h * 150 * u,
+                                 cw - 32 * u, h * 150 * u), 10 * u, 10 * u)
     p.end()
     return pm
+
+
+def write_app_icon(path, side=1024):
+    """Save the app icon as a PNG. The release build hands it to PyInstaller for
+    the downloadable apps; needs a Qt application, and makes one if there is none
+    (run with QT_QPA_PLATFORM=offscreen where there is no display)."""
+    from PySide6.QtGui import QGuiApplication
+
+    app = QGuiApplication.instance() or QGuiApplication([])  # noqa: F841 - Qt must exist to draw
+    if not _make_app_icon(side).save(str(path), "PNG"):
+        raise OSError(f"could not write the icon to {path}")
 
 
 def _set_macos_dock_icon(pixmap):

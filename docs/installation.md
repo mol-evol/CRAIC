@@ -26,12 +26,17 @@ operating system shows a one-time warning the first time you open one. This is e
 here's how to get past it:
 
 !!! warning "macOS — first launch"
-    macOS will refuse the app at first because it's from an "unidentified developer".
-    Either:
+    The app isn't signed by an Apple-registered developer, so macOS blocks it the
+    first time ("Apple could not verify 'CRAIC' is free of malware…"). To allow it,
+    once:
 
-    - **Right-click (or Control-click) the app → Open → Open**, or
-    - open it once, then go to **System Settings → Privacy & Security** and click
-      **Open Anyway**.
+    1. Drag **CRAIC** to Applications, double-click it, and click **Done** on the warning.
+    2. Open **System Settings → Privacy & Security** and scroll down to **Security**,
+       where it says "CRAIC" was blocked. Click **Open Anyway**, enter your password,
+       then click **Open Anyway** again.
+
+    After that it opens normally. (On macOS 14 and earlier, right-click the app and
+    choose **Open** instead; macOS 15 removed that shortcut.)
 
     If macOS says the app is "damaged" or won't open, clear the quarantine flag in
     Terminal (this is safe — it only removes the download-quarantine attribute):

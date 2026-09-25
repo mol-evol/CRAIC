@@ -85,6 +85,11 @@ preprint while the paper is under review) is in `CITATION.cff`, the README and t
 **About & citation** page, and a test checks they agree. The website gains a home page,
 top-level tabs, and a footer crediting the author on every page.
 
+**A proper app icon.** A grid of alignment cells over a reliability track, with one
+weak column in amber, laid out on the macOS icon grid. It is drawn in code, so the
+running app and the downloadable apps (which had PyInstaller's default icon) use the
+same one. The install guide now gives macOS 15's way of opening an unsigned app.
+
 **Raw results.** `benchmarks/results/` now holds the PRANK re-run (in place of
 the old PRANK rows in `balibase_official.csv` and `prank_percol.csv`) and the
 residue-masking runs (`residue_masking_nj.csv`, `residue_masking_ml.csv`); its

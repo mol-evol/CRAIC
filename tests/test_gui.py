@@ -1018,3 +1018,16 @@ def test_help_menu_credits_author_and_citation():
     box = about_box(win)
     for s in (__author__, AUTHOR_URL, WEBSITE, CITATION):
         assert s in box.text()
+
+
+def test_write_app_icon(tmp_path):
+    from PySide6.QtGui import QImage
+
+    from craic.gui.app import write_app_icon
+
+    _app()
+    out = tmp_path / "icon.png"
+    write_app_icon(out, 256)
+    img = QImage(str(out))
+    assert (img.width(), img.height()) == (256, 256)
+    assert img.pixelColor(0, 0).alpha() == 0             # transparent round the tile

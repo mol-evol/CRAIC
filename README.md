@@ -187,7 +187,7 @@ in the [installation guide](https://mol-evol.github.io/craic/installation/).
 **Just want a double-clickable app (no Python)?** Grab a standalone bundle from the
 [latest release](https://github.com/mol-evol/craic/releases) — `CRAIC-macos.dmg`,
 `CRAIC-windows.zip`, or `CRAIC-linux.tar.gz`. They're unsigned, so the first launch
-needs a one-time bypass (macOS: right-click → Open / "Open Anyway"; Windows: "More
+needs a one-time bypass (macOS: System Settings → Privacy & Security → "Open Anyway"; Windows: "More
 info → Run anyway") — see the [installation guide](https://mol-evol.github.io/craic/installation/#download-a-ready-to-run-app).
 
 **From PyPI (recommended)** — a prebuilt wheel with the Rust core bundled, no compiler
