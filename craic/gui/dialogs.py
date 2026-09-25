@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from PySide6.QtGui import QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QLabel,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QLabel,
     QLineEdit, QSpinBox,
 )
 
@@ -18,7 +18,8 @@ from .panels import exclusive_pair
 
 
 def _fmt_params(params: dict) -> str:
-    return ", ".join(f"{k}={v}" for k, v in params.items())
+    """Parameters as the History records them. Unset ones (left to the tool) are omitted."""
+    return ", ".join(f"{k}={v}" for k, v in params.items() if v is not None)
 
 
 class SimulateDialog(QDialog):
@@ -115,27 +116,41 @@ def _clamp(value, p):
 
 
 class EngineParamsDialog(QDialog):
-    """A small form to edit one aligner's parameters."""
+    """A small form to edit one aligner's parameters.
 
-    def __init__(self, engine, values, parent=None):
+    Given the ``alphabet`` the engine will be handed, it shows only the settings
+    that apply to it: a DNA matrix means nothing when *align as protein* is on.
+    The hidden settings keep their values, so switching back finds them as left.
+    """
+
+    def __init__(self, engine, values, parent=None, alphabet=None):
         super().__init__(parent)
         self.setWindowTitle(f"{engine.label} — parameters")
         self._widgets = {}
+        self._hidden = {}                        # key -> (param, value), not shown
         form = QFormLayout(self)
         params = engine.parameters()
+        self._order = [p.key for p in params]
         if not params:
             form.addRow(QLabel("This aligner has no tunable parameters in CRAIC."))
         for p in params:
             v = values.get(p.key, p.default)
+            if not p.applies_to(alphabet):
+                self._hidden[p.key] = (p, v)
+                continue
             if p.kind == "choice":
                 w = QComboBox()
                 w.addItems(p.choices or [])
                 if v in (p.choices or []):
                     w.setCurrentText(v)
+            elif p.kind == "bool":
+                w = QCheckBox()
+                w.setChecked(bool(v))
             else:
                 # Plain text field (with a numeric validator) rather than a spin
-                # box — lets you type any value directly, on any platform.
-                w = QLineEdit(str(v))
+                # box — lets you type any value directly, on any platform. A
+                # parameter the tool sets for itself shows blank, and says so.
+                w = QLineEdit("" if v is None else str(v))
                 # A parameter that names bounds gets them: the aligner will
                 # reject an out-of-range value anyway, and it is better to refuse
                 # the keystroke than to fail after the run has started.
@@ -149,12 +164,25 @@ class EngineParamsDialog(QDialog):
                     val = QDoubleValidator(lo, hi, 6, w)
                     val.setNotation(QDoubleValidator.StandardNotation)
                     w.setValidator(val)
-                if p.lo is not None or p.hi is not None:
+                if p.default is None:
+                    w.setPlaceholderText(f"blank = {p.blank_for(alphabet) or 'tool default'}")
+                elif p.lo is not None or p.hi is not None:
                     w.setPlaceholderText(f"{_fmt_bound(p.lo)} – {_fmt_bound(p.hi)}")
-            if p.help:
-                w.setToolTip(p.help)
+            tip = p.help
+            if p.kind in ("int", "float") and (p.lo is not None or p.hi is not None):
+                tip += f"\nRange: {_fmt_bound(p.lo)} – {_fmt_bound(p.hi)}."
+            if tip:
+                w.setToolTip(tip.strip())
             self._widgets[p.key] = (p, w)
             form.addRow(p.label, w)
+        if self._hidden:
+            shown, other = (("nucleotide", "protein") if alphabet.is_nucleotide
+                            else ("protein", "nucleotide"))
+            note = QLabel(f"Showing the settings for {shown} data; "
+                          f"{other}-only settings are hidden.")
+            note.setWordWrap(True)
+            note.setStyleSheet("color: gray;")
+            form.insertRow(0, note)
         buttons = QDialogButtonBox(
             QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -163,28 +191,31 @@ class EngineParamsDialog(QDialog):
         form.addRow(buttons)
 
     def _restore(self):
+        self._hidden = {k: (p, p.default) for k, (p, _v) in self._hidden.items()}
         for _key, (p, w) in self._widgets.items():
             if p.kind == "choice":
                 w.setCurrentText(str(p.default))
+            elif p.kind == "bool":
+                w.setChecked(bool(p.default))
             else:
-                w.setText(str(p.default))
+                w.setText("" if p.default is None else str(p.default))
 
     def values(self) -> dict:
-        out = {}
+        out = {k: v for k, (_p, v) in self._hidden.items()}
         for key, (p, w) in self._widgets.items():
             if p.kind == "choice":
                 out[key] = w.currentText()
-            elif p.kind == "int":
-                try:
-                    out[key] = _clamp(int(w.text()), p)
-                except ValueError:
-                    out[key] = int(p.default)
+            elif p.kind == "bool":
+                out[key] = w.isChecked()
+            elif not w.text().strip() and p.default is None:
+                out[key] = None                  # left to the tool
             else:
+                cast = int if p.kind == "int" else float
                 try:
-                    out[key] = _clamp(float(w.text()), p)
+                    out[key] = _clamp(cast(w.text()), p)
                 except ValueError:
-                    out[key] = float(p.default)
-        return out
+                    out[key] = p.default
+        return {k: out[k] for k in self._order}
 
 
 _FIG_KINDS = [

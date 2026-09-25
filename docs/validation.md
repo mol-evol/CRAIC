@@ -62,7 +62,7 @@ These are the numbers comparable with published BAliBASE tables.
 | CRAIC built-in | 0.827 ± 0.015 | 0.674 ± 0.022 |
 | MAFFT 7.505 | 0.818 ± 0.016 | 0.667 ± 0.022 |
 | Clustal Omega 1.2.4 | 0.766 ± 0.018 | 0.593 ± 0.024 |
-| PRANK v.170427 | 0.686 ± 0.018 | 0.470 ± 0.022 |
+| PRANK v.170427 | 0.714 ± 0.018 | 0.506 ± 0.023 |
 
 Paired Wilcoxon tests against the built-in engine, on SP:
 
@@ -72,7 +72,7 @@ Paired Wilcoxon tests against the built-in engine, on SP:
 | ProbCons | +0.023 | 99 / 52 | 4.6 × 10⁻⁶ |
 | MAFFT | −0.009 | 61 / 92 | 0.12 |
 | Clustal Omega | −0.061 | 33 / 128 | 2.3 × 10⁻¹² |
-| PRANK | −0.141 | 3 / 160 | 6.2 × 10⁻²⁸ |
+| PRANK | −0.113 | 5 / 157 | 1.1 × 10⁻²⁷ |
 
 Three things in that table are worth drawing out.
 
@@ -89,6 +89,14 @@ behind MUSCLE and ProbCons, ahead of Clustal Omega, and the ordering is not
 uniform across the sets: it is fourth on BB11 and BB12 and third on BBS1, where
 it beats MAFFT by 0.042. Per-set figures are in the
 [supplementary tables](#per-set-accuracy).
+
+!!! note "PRANK was re-run in 0.5.10"
+    CRAIC 0.5.9 passed PRANK `-gaprate=0.025 -gapext=0.5` for every dataset.
+    PRANK's own defaults for protein are 0.005 / 0.5, so the first version of
+    this benchmark aligned every family with five times PRANK's gap-opening
+    rate. The PRANK rows here are re-run with PRANK's own defaults (SP 0.686 →
+    0.714, TC 0.470 → 0.506); every other aligner's rows are unchanged, and so
+    are the conclusions drawn from them.
 
 **PRANK's position is a property of the benchmark, not a verdict on PRANK.** It
 is phylogeny-aware and declines to over-align — it treats insertions as
@@ -107,7 +115,7 @@ workbench offers would be a selection the reader could not see.
 | CRAIC built-in | 0.613 | 0.926 | 0.874 |
 | MAFFT | 0.651 | 0.938 | 0.832 |
 | Clustal Omega | 0.590 | 0.905 | 0.775 |
-| PRANK | 0.459 | 0.828 | 0.718 |
+| PRANK | 0.490 | 0.851 | 0.745 |
 
 ### No method reconstructs these alignments
 
@@ -155,9 +163,9 @@ the AUC is a per-column quantity and needs every column.
 | CRAIC built-in | 0.710 | 0.444 | 0.843 ± 0.008 |
 | MAFFT | 0.700 | 0.431 | 0.874 ± 0.007 |
 | Clustal Omega | 0.665 | 0.399 | 0.876 ± 0.009 |
-| PRANK | 0.565 | 0.304 | 0.907 ± 0.006 |
+| PRANK | 0.596 | 0.332 | 0.905 ± 0.007 |
 
-An AUC of 0.83–0.91 means that, picking a correct column and an incorrect one at
+An AUC of 0.83–0.90 means that, picking a correct column and an incorrect one at
 random, the score ranks them the right way round between five and nine times in
 ten. It works on alignments CRAIC did not build as well as on its own, which is
 the property that matters for a curation tool.
@@ -183,7 +191,7 @@ trivial **gap-fraction** rule. Only the margin over those is evidence.
 
 | alignment built by | kept columns | matched random | gap-fraction rule | z |
 |---|---|---|---|---|
-| PRANK | **0.856** | 0.563 | 0.654 | +10.7 |
+| PRANK | **0.846** | 0.592 | 0.671 | +10.8 |
 | Clustal Omega | **0.842** | 0.615 | 0.710 | +9.8 |
 | MUSCLE | **0.837** | 0.671 | 0.733 | +8.1 |
 | ProbCons | **0.832** | 0.666 | 0.733 | +8.1 |
@@ -196,7 +204,7 @@ the *z* is measured in. The **gap-fraction rule is the real competitor**: it cos
 nothing to compute and already reaches 0.71–0.73, which is over half the distance
 from random to the reliability score. The reliability score reaches 0.83–0.84.
 
-The informative margin is therefore the last **≈ 0.10** (0.10–0.20 across the six
+The informative margin is therefore the last **≈ 0.10** (0.10–0.18 across the six
 engines), not the ≈ 0.19 over random and not what an uncontrolled before-and-after
 comparison would suggest. Gap fraction is one line of code, so the pair-HMM, the consistency
 transformation and the perturbation ensemble have to beat *it* to earn the
@@ -225,7 +233,7 @@ three indel rates, 10 replicates per condition.
 | Clustal Omega | 0.549 | 0.261 | **0.943** | 0.836 | 0.529 | 0.532 | +12.2 |
 
 The reliability AUC is higher here than on BAliBASE (0.86–0.94 against
-0.81–0.86), which is what you would expect and is worth saying out loud: the
+0.83–0.90), which is what you would expect and is worth saying out loud: the
 simulated sequences are generated under a model closer to the pair-HMM that
 computes the score than real protein families are. The BAliBASE figures are the
 honest ones; these are the upper bound.
@@ -284,6 +292,54 @@ used. The reliability signal is for **locating and interrogating** ambiguous
 regions — and, if you must act on it, for curating them by hand. It is not an
 automatic filter to put in front of a tree search, and CRAIC's masking slider
 should not be treated as one.
+
+### Masking residues instead of columns
+
+Masking a column throws away its correctly aligned residues along with the
+wrong ones, and residue-level filters such as Divvier (Ali *et al.* 2019) and
+CLOAK (Wheeler *et al.* 2026) are reported to lose less signal. CRAIC 0.5.10
+can mask individual residues, so the same simulations were used to ask whether
+masking the residues the reliability score flags does better than masking the
+columns. For each CRAIC alignment the tree was built from the full alignment;
+with columns below 0.5 removed; with the lowest-scoring residues masked as
+missing data — exactly as many as the column mask removed, so both masks remove
+the same amount; with that many residues masked at random; and with every
+residue below 0.5 masked. Neighbour-joining skips masked residues pairwise, like
+gaps; IQ-TREE 2 (JC+G4, the simulating model), run at divergences 0.25 and 0.5,
+handles them site by site. Datasets in which any mask left too little data for a
+tree are excluded from every comparison (*n* below, of 60 per divergence).
+
+| divergence | tree | removed | full | columns | residues, lowest | residues, random | residues < 0.5 | *n* |
+|---|---|---|---|---|---|---|---|---|
+| 0.1 | NJ | 2% | 0.00 | 0.01 | 0.01 | 0.01 | 0.01 | 60 |
+| 0.25 | NJ | 25% | 0.04 | 0.16 | 0.22 | 0.21 | 0.22 | 60 |
+| 0.5 | NJ | 70% | 0.14 | 0.47 | 0.59 | 0.63 | 0.57 | 55 |
+| 0.75 | NJ | 89% | 0.28 | 0.62 | 0.76 | 0.84 | 0.68 | 51 |
+| 1.0 | NJ | 96% | 0.45 | 0.75 | 0.87 | 0.92 | 0.76 | 37 |
+| 1.5 | NJ | 99% | 0.55 | 0.81 | 0.93 | 0.97 | 0.79 | 20 |
+| 0.25 | ML | 25% | 0.02 | 0.12 | 0.19 | 0.18 | 0.18 | 60 |
+| 0.5 | ML | 70% | 0.12 | 0.47 | 0.57 | 0.61 | 0.53 | 52 |
+
+Masking residues did not help. At the same amount removed, masking the
+lowest-scoring residues gave worse trees than masking columns (mean
+Robinson–Foulds difference +0.09 with neighbour-joining, better in 18 datasets
+and worse in 111, Wilcoxon *p* = 3 × 10⁻¹⁶; +0.09 with maximum likelihood, 6
+better and 40 worse, *p* = 5 × 10⁻⁷), and only a little better than masking the
+same number of residues at random (−0.03, *p* = 0.005, and −0.01, *p* = 0.19).
+Masking every residue below 0.5 was also worse than masking columns. The flagged
+residues are not spread evenly across sequences, so the sequences that are
+hardest to align are left with the least data. At this threshold the residues the
+score flags carry phylogenetic signal as well as error. Gentler filtering,
+removing far fewer residues, has been reported to improve gene trees (Wheeler *et
+al.* 2026) and was not tested here.
+
+These trees come from a re-run of the simulation with 0.5.10, whose built-in
+engine gives slightly different alignments from those behind the tables above
+(SP within about 0.01), so the full and column-masked values differ a little
+from the previous table's.
+
+So residue masks are a curation tool — for a residue you have looked at and
+judged wrong — not a better automatic filter.
 
 ## What this does not show
 

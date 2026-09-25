@@ -216,3 +216,53 @@ def test_compare_masking_scores_every_method_including_the_rule_based_ones():
     for name, stats in res.items():
         # every method gets an AUC now, so the comparison can be lost
         assert not np.isnan(stats["auc"]), f"{name} has no AUC"
+
+
+# --------------------------------------------------------------------------- #
+# Residue masks in the tree comparison
+# --------------------------------------------------------------------------- #
+
+def test_matched_and_random_residue_masks_remove_exactly_k_residues():
+    from craic.domain import Alignment
+
+    aln = Alignment(["a", "b", "c"], ["ACGT-", "AC-TT", "ACGTT"], Alphabet.DNA)
+    cells = np.array([[0.9, 0.1, 0.8, 0.2, np.nan],
+                      [0.9, 0.3, np.nan, 0.7, 0.6],
+                      [0.9, 0.4, 0.5, 0.6, np.nan]])
+    low = M.lowest_residues(aln, cells, 3)
+    assert low == {"a": [1, 3], "b": [1]}                # 0.1, 0.2, 0.3; nan never picked
+    rnd = M.random_residues(aln, 4, np.random.default_rng(0))
+    assert sum(len(v) for v in rnd.values()) == 4
+
+
+def test_nj_distance_skips_masked_residues_like_gaps():
+    names = ["a", "b", "c", "d"]
+    rows = ["AAAAAAAA", "AAAAAAAT", "TTTTAAAA", "TTTTAAAT"]
+    masked = ["AAAAAAAA", "AAAAAAAN", "TTTTAAAA", "TTTTAAAN"]
+    # masking b's and d's differing site as missing makes a~b and c~d identical
+    dm = M._p_distance_matrix(names, masked, missing="-N")
+    assert dm["a", "b"] == 0.0 and dm["c", "d"] == 0.0
+    assert M.nj_tree_bipartitions(names, rows) == M.nj_tree_bipartitions(names, masked, "-N")
+
+
+def test_resuming_an_old_results_file_rewrites_it_under_the_current_header(tmp_path, monkeypatch):
+    import csv
+    import run_benchmark as RB
+
+    out = tmp_path / "old.csv"
+    with open(out, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["mode", "condition", "item", "aligner", "sp"])
+        w.writerow(["sim", "c", "rep0", "X", "0.5"])
+    from craic import engines
+
+    # main() sets these globals; let monkeypatch put them back for later tests
+    for obj, name in ((RB, "_ONLY"), (RB, "_TREE"), (engines.ExternalAligner, "timeout"),
+                      (engines.BuiltinProgressive, "benchmark_effort"),
+                      (engines.BuiltinProgressive, "consistency_mem_gb")):
+        monkeypatch.setattr(obj, name, getattr(obj, name))
+    monkeypatch.setattr(sys, "argv", ["run_benchmark.py", "--sim", "--reps", "0", "--engines",
+                                      "builtin", "--out", str(out)])
+    RB.main()
+    rows = list(csv.DictReader(open(out)))
+    assert rows[0]["sp"] == "0.5" and "rf_resid_matched" in rows[0]

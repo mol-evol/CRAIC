@@ -5,9 +5,9 @@ A ``python -m craic`` launch shows the Python executable ("python3.13") in the
 Dock and Cmd-Tab because it is not an app bundle. This wraps CRAIC in a minimal
 .app so it reads "CRAIC" everywhere and can be launched from Finder / the Dock.
 
-The bundle simply calls ``craic.command`` in this project folder, so it always
-picks the same interpreter your terminal launch does. Re-run this script if you
-move the project.
+Run this with the interpreter CRAIC is installed in; the bundle launches that
+same interpreter. CRAIC must be installed into it normally (not editable) --
+see the warning this script prints if it is not.
 
     python scripts/make_app.py [--dest DIR]
 """
@@ -76,7 +76,15 @@ def build(dest: Path) -> Path:
     launcher = macos / APP_NAME
     launcher.write_text(
         "#!/bin/bash\n"
-        f'exec "{ROOT}/craic.command" "$@"\n')
+        # A Finder-launched app has no terminal, so keep a log of why it failed.
+        'exec >>"$HOME/Library/Logs/CRAIC.log" 2>&1\n'
+        'echo "--- $(date) launching CRAIC"\n'
+        # Run from $HOME and import CRAIC from the interpreter's own
+        # site-packages. Nothing in the project folder is touched: if the project
+        # sits in Dropbox / iCloud / Documents, macOS privacy protection denies a
+        # Finder-launched app access to it and the app would die silently.
+        'cd "$HOME"\n'
+        f'exec "{sys.executable}" -m craic "$@"\n')
     launcher.chmod(0o755)
 
     icns = resources / "craic.icns"
@@ -104,6 +112,61 @@ def build(dest: Path) -> Path:
     return app, have_icon, (icns.stat().st_size if have_icon else 0)
 
 
+def _check_not_editable() -> None:
+    """Warn if CRAIC is installed editable, i.e. still living in the project folder.
+
+    ``maturin develop`` and ``pip install -e`` leave the package where it was
+    built. That is fine from a terminal, but a Finder-launched app gets no access
+    to Dropbox / iCloud / Documents under macOS privacy protection, so it would
+    exit immediately with no visible error. Call this BEFORE adding the project
+    to sys.path, or the check answers itself.
+    """
+    try:
+        import craic
+        src = Path(craic.__file__).resolve()
+    except Exception:
+        print("  ! CRAIC is not importable from this interpreter.")
+        print(f'    Run:  "{sys.executable}" -m pip install --no-deps --force-reinstall .')
+        return
+    if Path(sys.prefix).resolve() not in src.parents:
+        print(f"  ! CRAIC is installed editable, from {src.parent}")
+        print("    The app will not be able to read that folder when launched from Finder.")
+        print(f'    Run:  "{sys.executable}" -m pip install --no-deps --force-reinstall .')
+
+
+def _report_engines() -> None:
+    """List which external aligners the bundle will be able to see."""
+    from shutil import which
+    found = {t: which(t) for t in ("mafft", "muscle", "probcons", "prank", "clustalo")}
+    found["clustalw"] = which("clustalw2") or which("clustalw")
+    ok = [t for t, p in found.items() if p]
+    missing = [t for t, p in found.items() if not p]
+    print(f"  engines on PATH: {', '.join(ok) if ok else 'none'}")
+    if missing:
+        print(f"  not on PATH:     {', '.join(missing)}")
+        print("    These will be greyed out in the app. Re-run this script from a shell")
+        print("    where they are on PATH (e.g. with the right conda env activated).")
+
+
+def _codesign(app: Path) -> None:
+    """Ad-hoc sign the bundle.
+
+    Without a code signature macOS cannot attribute the app to anything, so TCC
+    (privacy) denies it access to protected folders -- Dropbox / iCloud /
+    Documents / Desktop -- *silently*, with no prompt. The app then appears to do
+    nothing at all. An ad-hoc signature gives it a stable identity, so macOS asks
+    the user instead of refusing.
+    """
+    try:
+        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        print("  signed: ad-hoc ok")
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        err = getattr(exc, "stderr", b"") or b""
+        print(f"  ! ad-hoc signing failed ({err.decode(errors='replace').strip() or exc})")
+        print("    macOS may deny the app access to Dropbox/Documents without a prompt.")
+
+
 def _refresh_finder(app: Path) -> None:
     """Register the bundle with LaunchServices and bump its mtime so Finder re-reads
     its icon instead of showing a cached generic one."""
@@ -128,8 +191,11 @@ def main() -> None:
     ap.add_argument("--dest", default=str(ROOT),
                     help="directory to write CRAIC.app into (default: project root)")
     args = ap.parse_args()
+    _check_not_editable()                       # before ROOT joins sys.path
     sys.path.insert(0, str(ROOT))               # so `craic` imports even if not pip-installed
     app, have_icon, size = build(Path(args.dest))
+    _report_engines()
+    _codesign(app)
     _refresh_finder(app)
     print(f"\nBuilt {app}")
     if have_icon:

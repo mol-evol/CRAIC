@@ -8,7 +8,9 @@ alignment canvas, a dockable **Ambiguity tools** panel on the right (hidden by d
 ## Toolbar — File / Edit row
 
 Document actions live under dropdown buttons at the left of the row — **File ▾** (load, save,
-export, history), **Edit ▾** (clipboard and alignment edits), and **View ▾** (show/hide panels).
+export, history), **Edit ▾** (clipboard and alignment edits), **View ▾** (show/hide panels),
+**Teach ▾** (known-answer tools, see [Teaching](../guide/teaching.md)) and **Help ▾** (the
+website, and who wrote CRAIC and how to cite it).
 Keyboard shortcuts work whether or not a menu is open; every action except **Open…** is disabled
 until an alignment is loaded.
 
@@ -31,6 +33,8 @@ until an alignment is loaded.
 | **Edit ▾ → Annotations ▸** | Add a named, coloured column feature (helix, active site, …) from the selection; select one to highlight its columns; export only the annotated columns. | Shown in a band at the bottom; stored in the sidecar. |
 | **View ▾ → Ambiguity tools panel** | Show or hide the **Ambiguity tools** dock (sandbox, posterior explorer, column inspector). | **Hidden by default** — use this to show it, and to bring it back if you've closed it with its **×**. |
 | **View ▾ → Bigger / Smaller / Reset text size** | Zoom the residue font and cells. | Ctrl/⌘ `+` / `-` / `0`, or Ctrl/⌘ + scroll over the alignment. |
+| **Help ▾ → CRAIC website** | Open <https://mol-evol.github.io/craic/> in your browser. | |
+| **Help ▾ → About CRAIC and how to cite it…** | Version, author (with a link to <https://mol-evol.github.io/>), the website, and the citation. | **Copy citation** puts the citation on the clipboard. See [About & citation](../about.md). |
 | **Engine** | The aligner used by **Align**. | Always lists *CRAIC built-in (progressive)*; adds MAFFT, MUSCLE, Clustal Omega, PRANK if found on `PATH`. See [Engines](engines-and-formats.md). |
 | **⚙** (parameters) | Edit the selected engine's parameters — gap costs, MAFFT strategy/`--op`/`--ep`, Clustal Omega iterations, PRANK gap rates. | Opens a small dialog with **Restore Defaults**. Settings are remembered per engine for the session and are used by both **Align** and the *Aligner agreement* track. Engines with no tunable knobs (e.g. MUSCLE v5) say so. |
 | **align as protein** | Translate the coding nucleotides, align the amino acids, then thread the original nucleotides back through that alignment. | Only effective for nucleotide data. Assumes reading frame 0. The nucleotides stay in memory and the result carries a coding annotation, so the nt / codon / amino-acid views all work; the view switches to amino acid automatically when alignment finishes. |

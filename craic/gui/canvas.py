@@ -14,7 +14,7 @@ from typing import List, Optional, Set, Tuple
 
 import numpy as np
 from PySide6.QtCore import QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QImage, QPainter
 from PySide6.QtWidgets import QAbstractScrollArea
 
 from ..domain import Alignment, Level, column_consensus
@@ -46,6 +46,7 @@ class AlignmentCanvas(QAbstractScrollArea):
         self._nt_keep: Optional[np.ndarray] = None
         #: Nucleotide columns the user has pinned as trusted (see set_pins).
         self._pins: set = set()
+        self._masked: Set[Tuple[int, int]] = set()      # masked residues, (row, nt column)
         self._sel_cols: Optional[Tuple[int, int]] = None
         self._anchor: Optional[int] = None
 
@@ -132,6 +133,7 @@ class AlignmentCanvas(QAbstractScrollArea):
         self._dm = aln.display(self.level)
         self._nt_scores = self._nt_keep = self._sel_cols = None
         self._pins = set()
+        self._masked = set()
         self._outlier_rows = set()
         self._cell_scores = self._probe = self._probe_cell = None
         self._cursor = None
@@ -180,6 +182,21 @@ class AlignmentCanvas(QAbstractScrollArea):
     @property
     def pins(self) -> set:
         return set(self._pins)
+
+    def set_residue_mask(self, cells) -> None:
+        """Residues the user has masked, as ``(row, nucleotide column)`` cells.
+
+        Drawn greyed and hatched: still visible, since the column is kept, but
+        plainly not part of what will be exported.
+        """
+        self._masked = set(cells)
+        self.viewport().update()
+
+    def _cell_masked(self, r: int, c: int) -> bool:
+        if not self._masked:
+            return False
+        s = self._dm.nt_start[c]
+        return any((r, s + k) in self._masked for k in range(self._dm.span))
 
     def _col_pinned(self, c: int) -> bool:
         if not self._pins or self._dm is None:
@@ -493,16 +510,22 @@ class AlignmentCanvas(QAbstractScrollArea):
                     col = colors.score_color(self._agg_cell(r, c))
                 else:
                     col = colors.residue_color(cell, self.level, self.aln.alphabet, table, scheme)
+                masked = not is_gap and self._cell_masked(r, c)
+                if masked:
+                    col = colors.MASKED
                 if not kept:
                     col = col.darker(220)
                 p.fillRect(x, y, col_w - 1, self.cell_h - 1, col)
+                if masked:
+                    p.fillRect(x, y, col_w - 1, self.cell_h - 1,
+                               QBrush(colors.MUTED, Qt.BDiagPattern))
                 if tint and not is_gap:
                     # Gamma-boost so faint alternative columns are visible, not
                     # just the residue's own (always-strongest) column.
                     a = int(55 + 195 * (min(1.0, pv) ** 0.5))
                     p.fillRect(x, y, col_w - 1, self.cell_h - 1, QColor(216, 94, 240, a))
                 if draw_letters and not is_gap:
-                    p.setPen(QColor(20, 24, 28))
+                    p.setPen(colors.MUTED if masked else QColor(20, 24, 28))
                     p.drawText(QRect(x, y, col_w - 1, self.cell_h - 1), Qt.AlignCenter, cell)
                 if (r, c) in self._find:
                     p.setPen(QColor(255, 214, 0))

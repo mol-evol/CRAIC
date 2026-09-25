@@ -31,12 +31,15 @@ craic align seqs.fasta -o aln.fasta
 craic align seqs.fasta -o aln.fasta --engine mafft
 craic align cds.fasta  -o aln.fasta --codon        # align as protein, back-translate
 craic align mito.fasta -o aln.fasta --codon --code 2   # vertebrate mitochondrial
+craic align seqs.fasta -o aln.fasta --engine clustalw --param gapopen=5 --param gapext=0.1
+craic align seqs.fasta -o aln.fasta --engine mafft --param strategy=L-INS-i --param op=2.0
 ```
 
 | Option | Meaning |
 |---|---|
-| `--engine` | `builtin` (default), `mafft`, `muscle`, `clustalo`, `prank` — whichever are on your `PATH` |
+| `--engine` | `builtin` (default), `mafft`, `muscle`, `clustalo`, `probcons`, `prank`, `clustalw` — whichever are on your `PATH` |
 | `--effort` | built-in engine compute level: `min`, `med` (default), `max` |
+| `--param KEY=VALUE` | set one of the engine's parameters; repeat for more. The keys are the ones in the ⚙ dialog — `craic engines` lists them with their defaults. A choice can be given by its first word (`strategy=L-INS-i`) |
 | `--codon` | translate → align amino acids → back-translate, so gaps respect the reading frame |
 | `--code N` | NCBI genetic-code table for `--codon` (default 1, the standard code) |
 | `--alphabet` | force `dna`, `rna` or `protein` instead of detecting it |
@@ -48,6 +51,15 @@ craic align mito.fasta -o aln.fasta --codon --code 2   # vertebrate mitochondria
     standard code reads it as a stop, and a stop is not one of the twenty
     residues, so it contributes no homology signal at all. CRAIC warns when a
     coding alignment contains internal stop codons, which is the usual symptom.
+
+## `craic engines`
+
+List every engine, whether it was found on your `PATH`, and each parameter `--param` accepts
+with its range and default.
+
+```bash
+craic engines
+```
 
 ## `craic codes`
 
@@ -81,11 +93,13 @@ scored as a very bad alignment.
 
 ## `craic mask`
 
-Drop columns below a reliability threshold.
+Drop columns below a reliability threshold — or, with `--residues`, mask the
+individual residues below it and keep every column.
 
 ```bash
 craic mask aln.fasta -o masked.fasta --threshold 0.5
 craic mask aln.fasta -o masked.fasta --which consistency --unscored keep
+craic mask aln.fasta -o masked.fasta --residues     # residues become N / X
 ```
 
 | Option | Meaning |
@@ -94,6 +108,7 @@ craic mask aln.fasta -o masked.fasta --which consistency --unscored keep
 | `--which` | `combined` (default), `consistency` or `perturbation` |
 | `--unscored` | `drop` (default) or `keep` — what to do with columns that had no residue-pair evidence at all |
 | `--fast`, `--replicates` | as for `score` |
+| `--residues` | mask residues whose own reliability is below the threshold, writing each as missing data (`N` for nucleotides, `X` for amino acids), instead of dropping columns. A residue with nothing to be homologous to in its column is left alone |
 
 `--unscored drop` is the default and the conservative choice: a column that could
 not be assessed is not evidence. It is the same definition the GUI's mask slider

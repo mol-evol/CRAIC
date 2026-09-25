@@ -6,9 +6,11 @@ Everything else is a subcommand that runs headless:
     craic align seqs.fasta -o aln.fasta
     craic score aln.fasta -o scores.tsv
     craic mask  aln.fasta -o masked.fasta --threshold 0.5
+    craic mask  aln.fasta -o masked.fasta --residues   # mask residues, keep columns
     craic trim  aln.fasta -o trimmed.fasta --method gappyout
     craic simulate -o truth.fasta --taxa 12 --divergence 0.35
     craic session work.fasta.craic.json            # what is in a saved session
+    craic engines                                  # engines and their --param keys
 
 The headless path never imports PySide6. That is the point of it: a reliability
 score you can only obtain by opening a window is a score that cannot go in a
@@ -90,6 +92,30 @@ def _engine(key: str):
     raise SystemExit(f"craic: engine {key!r} is not available (have: {have})")
 
 
+def _engine_opts(eng, pairs: Optional[Sequence[str]]) -> dict:
+    """``--param KEY=VALUE`` pairs, read against the engine's own parameter list.
+
+    The engine says what it accepts, so a parameter added to an engine is
+    available here without touching the command line.
+    """
+    params = {p.key: p for p in eng.parameters()}
+    opts = {}
+    for item in pairs or []:
+        key, sep, raw = item.partition("=")
+        key = key.strip()
+        if not sep:
+            raise SystemExit(f"craic: --param wants KEY=VALUE, got {item!r}")
+        if key not in params:
+            have = ", ".join(params) or "none"
+            raise SystemExit(f"craic: {eng.label} has no parameter {key!r} "
+                             f"(it has: {have}). `craic engines` describes them.")
+        try:
+            opts[key] = params[key].coerce(raw)
+        except ValueError as exc:
+            raise SystemExit(f"craic: {exc}")
+    return opts
+
+
 # --------------------------------------------------------------------------- #
 # Subcommands
 # --------------------------------------------------------------------------- #
@@ -110,6 +136,7 @@ def cmd_align(args) -> int:
         from .engines import CodonAware
         eng = CodonAware(eng, table=args.code)
     opts = {} if args.engine != "builtin" else {"effort": args.effort}
+    opts.update(_engine_opts(eng, args.param))
     aln = eng.align(records, alph, **opts)
     _warn_internal_stops(aln)
     _write(aln, args.out, args.format)
@@ -142,6 +169,39 @@ def _warn_internal_stops(aln) -> None:
               "--code 2 / --code 4 (`craic codes` lists them); otherwise check "
               "the reading frame.", file=sys.stderr)
     return
+
+
+def _num(x) -> str:
+    """1000, not 1000.0 or 1e+03."""
+    return str(int(x)) if float(x).is_integer() else str(x)
+
+
+def cmd_engines(args) -> int:
+    """Every engine, whether it was found, and the parameters --param accepts."""
+    from .engines import all_engines
+
+    for eng in all_engines():
+        state = "found" if eng.available() else "not found"
+        print(f"{eng.key} — {eng.label} ({state})")
+        for p in eng.parameters():
+            if p.kind == "choice":
+                values = " | ".join(p.choices or [])
+            elif p.kind == "bool":
+                values = "true | false"
+            elif p.lo is not None and p.hi is not None:
+                values = f"{p.kind} {_num(p.lo)}–{_num(p.hi)}"
+            elif p.lo is not None:
+                values = f"{p.kind} ≥ {_num(p.lo)}"
+            else:
+                values = p.kind
+            if p.default is None:
+                default = f"blank = {p.blank_for()}"
+            else:
+                default = str(p.default).lower() if p.kind == "bool" else p.default
+            only = f"  ({p.alphabet} only)" if p.alphabet else ""
+            print(f"    {p.key}: {values}  [default: {default}]{only}")
+        print()
+    return 0
 
 
 def cmd_codes(args) -> int:
@@ -208,6 +268,14 @@ def cmd_mask(args) -> int:
     aln = _load(args.input, args.alphabet)
     rep = rel_mod.analyse(aln, do_perturbation=not args.fast,
                           n_replicates=args.replicates)
+    if args.residues:
+        mask = rel_mod.residues_below(aln, rep.cell_scores(args.which), args.threshold)
+        _write(rel_mod.apply_residue_mask(aln, mask), args.out, args.format)
+        total = sum(ch != "-" for r in aln.rows for ch in r)
+        print(f"masked {rel_mod.mask_size(mask)}/{total} residues as "
+              f"{rel_mod.missing_symbol(aln.alphabet)} ({args.which} < {args.threshold}); "
+              f"all {aln.length} columns kept", file=sys.stderr)
+        return 0
     try:
         keep = rep.keep_mask(args.threshold, which=args.which, unscored=args.unscored)
     except ValueError as exc:
@@ -305,7 +373,7 @@ def cmd_session(args) -> int:
 # Argument parsing
 # --------------------------------------------------------------------------- #
 
-_SUBCOMMANDS = ("align", "score", "mask", "trim", "simulate", "session", "codes")
+_SUBCOMMANDS = ("align", "score", "mask", "trim", "simulate", "session", "codes", "engines")
 
 
 def _add_common(p, alphabet: bool = True) -> None:
@@ -337,15 +405,17 @@ def _add_masking(p) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from . import __version__
+    from . import ABOUT_URL, __author__, __version__
 
     ap = argparse.ArgumentParser(
         prog="craic",
         description="CRAIC — a multiple sequence alignment workbench built for "
-                    "ambiguous regions.",
+                    f"ambiguous regions. By {__author__}; website and how to cite: "
+                    f"{ABOUT_URL}",
         epilog=_LAUNCH_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--version", action="version", version=f"CRAIC {__version__}")
+    ap.add_argument("--version", action="version",
+                    version=f"CRAIC {__version__} by {__author__} — {ABOUT_URL}")
     ap.add_argument("--core", action="store_true",
                     help="report which acceleration core is in use, and exit")
     sub = ap.add_subparsers(dest="command")
@@ -354,9 +424,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", help="unaligned sequences")
     _add_common(p)
     p.add_argument("--engine", default="builtin",
-                   help="builtin, mafft, muscle, clustalo or prank (default: builtin)")
+                   help="builtin, mafft, muscle, clustalo, probcons, prank or "
+                        "clustalw (default: builtin)")
     p.add_argument("--effort", choices=["min", "med", "max"], default="med",
                    help="built-in engine compute level (default: med)")
+    p.add_argument("--param", action="append", metavar="KEY=VALUE",
+                   help="set one of the engine's parameters, e.g. --param op=2.5; "
+                        "repeat for more. `craic engines` lists every key")
     p.add_argument("--codon", action="store_true",
                    help="align coding nucleotides in amino-acid space and back-translate")
     p.add_argument("--code", type=int, default=1, metavar="N",
@@ -366,6 +440,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "`craic codes` lists them all")
     p.add_argument("--format", help="output format (default: from the extension)")
     p.set_defaults(func=cmd_align)
+
+    p = sub.add_parser("engines", help="list the engines and the parameters each accepts")
+    p.set_defaults(func=cmd_engines)
 
     p = sub.add_parser("codes", help="list the NCBI genetic-code tables")
     p.set_defaults(func=cmd_codes)
@@ -379,10 +456,13 @@ def build_parser() -> argparse.ArgumentParser:
                         "correctness and reports SP, TC and the reliability AUC")
     p.set_defaults(func=cmd_score)
 
-    p = sub.add_parser("mask", help="drop columns below a reliability threshold")
+    p = sub.add_parser("mask", help="drop columns (or mask residues) below a reliability threshold")
     p.add_argument("input", help="an alignment")
     _add_common(p)
     _add_masking(p)
+    p.add_argument("--residues", action="store_true",
+                   help="mask individual residues below the threshold instead, "
+                        "writing them as missing data (N or X) and keeping every column")
     p.add_argument("--format", help="output format (default: from the extension)")
     p.set_defaults(func=cmd_mask)
 

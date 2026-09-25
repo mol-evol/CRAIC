@@ -1,17 +1,29 @@
-# Benchmark results shipped with 0.5.0
+# Benchmark results
 
 The raw output behind [docs/validation.md](../../docs/validation.md), so the
 tables there can be checked without re-running anything. The commands that
 produced them are given at the foot of that page.
 
+Used by `validation.md` and the paper:
+
 | file | what it is |
 |---|---|
-| `balibase_coreblock.csv` | official `bali_score` SP and TC over the reference core blocks — the figures comparable with published BAliBASE tables |
-| `balibase_allcolumn.csv` | the harness's own per-family output: all-column SP and TC, the per-column reliability AUC, and the masking controls (kept / matched-random / gap-fraction, with a z score) |
-| `simulation.csv` | the 360-dataset simulation sweep: same metrics plus Robinson–Foulds distance of the neighbour-joining tree, full alignment versus masked |
+| `balibase_official.csv` | official `bali_score` SP and TC over the reference core blocks, six aligners — the figures comparable with published BAliBASE tables. The PRANK rows are the 0.5.10 re-run with PRANK's own default gap costs (RV11 and RV12 only) |
+| `balibase.csv` | the harness's own per-family output: all-column SP and TC, the per-column reliability AUC, and the masking controls (kept / matched-random / gap-fraction, with a z score). Its four PRANK rows are superseded by `prank_percol.csv` |
+| `prank_percol.csv` | the same per-family output for PRANK, from the 0.5.10 re-run |
+| `simulation.csv` | the 360-dataset simulation sweep, four aligners: same metrics plus Robinson–Foulds distance of the neighbour-joining tree, full alignment versus masked |
+| `residue_masking_nj.csv` | the 360-dataset simulation sweep for the built-in engine, with tree error (neighbour-joining) when the reliability score masks columns and when it masks residues: below the threshold, the same number as the column mask, and that many at random |
+| `residue_masking_ml.csv` | the same comparison with IQ-TREE maximum-likelihood trees (JC+G4), divergence 0.25 and 0.5 — what `--tree ml` produces, with only the tree columns kept |
 
-Environment: MAFFT 7.505, MUSCLE 5.1, Clustal Omega 1.2.4, BAliBASE 3.0, CRAIC
-0.5.0 with the compiled Rust core.
+Earlier runs, kept for the record:
+
+| file | what it is |
+|---|---|
+| `balibase_coreblock.csv`, `balibase_allcolumn.csv` | the 0.5.0 BAliBASE run: four aligners, 181 families |
+| `prank_sim.csv` | PRANK on the simulation sweep, made by 0.5.9 with the wrong gap extension (0.5; PRANK's DNA default is 0.75). Not used anywhere |
+
+Environment: MAFFT 7.505, MUSCLE 5.1, Clustal Omega 1.2.4, ProbCons 1.12, PRANK
+v.170427, IQ-TREE 2.0.7, BAliBASE 3.0, CRAIC with the compiled Rust core.
 
 Two scope notes that matter for reading these numbers:
 
@@ -19,7 +31,7 @@ Two scope notes that matter for reading these numbers:
   without `--perturbation`, which is roughly an order of magnitude more
   expensive; the combined score the interface shows by default adds the
   perturbation ensemble on top.
-* BAliBASE coverage is RV11 and RV12 in full plus 17 families of RV20. Larger
-  families exceed the compute budget — the consistency analysis is cubic in the
-  number of sequences — and families that any aligner failed to complete are
-  excluded from **every** aligner's mean, so the comparison stays like for like.
+* Larger BAliBASE families exceed the compute budget — the consistency analysis
+  is cubic in the number of sequences — and families that any aligner failed to
+  complete are excluded from **every** aligner's mean, so the comparison stays
+  like for like.

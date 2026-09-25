@@ -93,12 +93,17 @@ def alternatives(
     param_grid: Optional[Sequence[float]] = None,
     progress: Optional[Callable[[int, int, str], None]] = None,
     cancelled: Optional[Callable[[], bool]] = None,
+    params_by_key: Optional[dict] = None,
 ) -> List[Alternative]:
     """Labelled block alignments from several engines / gap settings.
 
     With ``codon_aware`` the block is re-aligned in amino-acid space (translate →
     align → back-translate), so the result keeps the reading frame and can be
     shown as codons or amino acids.
+
+    ``params_by_key`` maps an engine's key to the parameters it is run with (the
+    settings dialog's values); an engine not in it runs with its defaults. The
+    built-in gap-probability grid is a fixed contrast and is not affected.
 
     ``progress(done, total, label)`` is called before each engine runs, and
     ``cancelled()`` is polled between engines so a long run can be stopped early
@@ -123,7 +128,8 @@ def alternatives(
         if progress is not None:
             progress(done, total, f"Aligning with {eng.label}…")
         try:
-            block = wrap(eng).align(records, aln.alphabet)
+            params = (params_by_key or {}).get(eng.key, {})
+            block = wrap(eng).align(records, aln.alphabet, **params)
             out.append(Alternative(eng.label, block, level))
         except Exception:
             pass

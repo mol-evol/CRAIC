@@ -13,6 +13,7 @@ GRID = QColor("#2a313a")
 TEXT = QColor("#dfe6ee")
 MUTED = QColor("#8a97a6")
 GAP = QColor("#222831")
+MASKED = QColor("#39414b")      # a residue the user has masked: kept, but not exported
 
 _NT = {
     "A": "#4CAF50", "C": "#2196F3", "G": "#FF9800", "T": "#E53935",

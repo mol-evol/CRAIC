@@ -54,6 +54,28 @@ External video works too — paste a YouTube/Vimeo `<iframe>` embed.
 Read the Docs, an S3 bucket, or an internal server. Nothing about the output is tied to a
 platform.
 
+## Updating the citation
+
+While the paper is under review, CRAIC is cited as the bioRxiv preprint. The citation
+is written out in five places; change all of them together (the test suite checks that
+the first three agree):
+
+1. `craic/__init__.py`: `CITATION`, which the app's About box and copy button use;
+2. `README.md`: the **Citation** section;
+3. `docs/about.md`: the citation and the BibTeX entry below it;
+4. `docs/index.md`: the **Citing CRAIC** box;
+5. `CITATION.cff`: the `preferred-citation` block, which drives GitHub's **Cite this
+   repository** button.
+
+**When bioRxiv posts the preprint**, replace "link to follow" with its DOI link
+(`https://doi.org/…`), and add `doi: "…"` to `preferred-citation` in `CITATION.cff`.
+
+**When the paper is published**, replace the preprint with the journal citation
+(journal, volume, pages, DOI), and in `CITATION.cff` set `journal`, `volume`, `start`,
+`end` and `doi` to match.
+
+Push to `main` and the website updates itself.
+
 ## Why this stack
 
 Markdown keeps the *source* trivially editable and diff-friendly; Material renders it into a

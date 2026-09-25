@@ -122,6 +122,9 @@ _BLOSUM_SCALE = {"BLOSUM45": 3.0, "BLOSUM50": 3.0, "BLOSUM62": 2.0,
 #: choice to estimated divergence is future work.
 PROTEIN_MATRIX = "BLOSUM45"
 
+#: Every protein matrix the emission model can be built from.
+PROTEIN_MATRICES = tuple(_BLOSUM_SCALE)
+
 
 def _protein_model(matrix: str = PROTEIN_MATRIX) -> EmissionModel:
     from Bio.Align import substitution_matrices
@@ -145,14 +148,18 @@ def _protein_model(matrix: str = PROTEIN_MATRIX) -> EmissionModel:
 _MODEL_CACHE: Dict[str, EmissionModel] = {}
 
 
-def emission_model(kind: str, identity: float = 0.9) -> EmissionModel:
-    """Return a cached emission model. ``kind`` in {dna, rna, protein}."""
+def emission_model(kind: str, identity: float = 0.9,
+                   matrix: str = PROTEIN_MATRIX) -> EmissionModel:
+    """Return a cached emission model. ``kind`` in {dna, rna, protein}.
+
+    ``matrix`` names the protein substitution matrix and is ignored for DNA.
+    """
     kind = kind.lower()
     if kind == "rna":
         kind = "dna"
-    key = f"{kind}:{identity}"
+    key = f"{kind}:{identity}:{matrix}" if kind == "protein" else f"{kind}:{identity}"
     if key not in _MODEL_CACHE:
-        _MODEL_CACHE[key] = _protein_model() if kind == "protein" else _dna_model(identity)
+        _MODEL_CACHE[key] = _protein_model(matrix) if kind == "protein" else _dna_model(identity)
     return _MODEL_CACHE[key]
 
 

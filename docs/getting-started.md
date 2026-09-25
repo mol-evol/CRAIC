@@ -71,6 +71,6 @@ See [Teaching with a known answer](guide/teaching.md).
 
 ## Optional: external aligners
 
-CRAIC auto-detects **MAFFT**, **MUSCLE**, **Clustal Omega**, and **PRANK** on your `PATH`
-and offers them in the engine menu and the disagreement comparison. None are required — the
+CRAIC auto-detects **MAFFT**, **MUSCLE**, **Clustal Omega**, **ProbCons**, **PRANK** and
+**ClustalW** on your `PATH` and offers them in the engine menu and the disagreement comparison. None are required — the
 built-in progressive aligner always works.

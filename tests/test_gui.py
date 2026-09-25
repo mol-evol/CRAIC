@@ -212,6 +212,108 @@ def test_engine_params_dialog_roundtrips_values():
     assert dlg.values()["op"] == 1.53                  # default restored
 
 
+def test_a_parameter_left_to_the_tool_shows_blank_and_reads_back_as_none():
+    _app()
+    from PySide6.QtWidgets import QCheckBox
+
+    from craic.engines import PrankEngine
+    from craic.gui.dialogs import EngineParamsDialog, _fmt_params
+
+    dlg = EngineParamsDialog(PrankEngine(), {})
+    _p, w = dlg._widgets["gaprate"]
+    assert w.text() == "" and "PRANK default" in w.placeholderText()
+    vals = dlg.values()
+    assert vals["gaprate"] is None and vals["gapext"] is None and vals["F"] is False
+    w.setText("0.01")
+    _p, box = dlg._widgets["F"]
+    assert isinstance(box, QCheckBox)
+    box.setChecked(True)
+    vals = dlg.values()
+    assert vals["gaprate"] == 0.01 and vals["F"] is True
+    assert "gapext" not in _fmt_params(vals)          # History omits what PRANK chose
+    dlg._restore()
+    assert dlg.values()["gaprate"] is None and dlg.values()["F"] is False
+
+
+def test_the_settings_dialog_shows_only_what_applies_to_the_data():
+    _app()
+    from craic.engines import ClustalWEngine
+    from craic.gui.dialogs import EngineParamsDialog
+
+    eng = ClustalWEngine()
+    prot = EngineParamsDialog(eng, {"dnamatrix": "CLUSTALW"}, alphabet=Alphabet.PROTEIN)
+    assert {"matrix", "gapdist", "nopgap", "nohgap"} <= set(prot._widgets)
+    assert "dnamatrix" not in prot._widgets
+    _p, w = prot._widgets["gapopen"]
+    assert w.placeholderText() == "blank = ClustalW default, 10"
+    assert prot.values()["dnamatrix"] == "CLUSTALW"      # hidden, but kept as left
+    assert list(prot.values()) == [p.key for p in eng.parameters()]
+
+    dna = EngineParamsDialog(eng, {}, alphabet=Alphabet.DNA)
+    assert "dnamatrix" in dna._widgets
+    assert not {"matrix", "gapdist", "nopgap", "nohgap"} & set(dna._widgets)
+    assert dna._widgets["gapopen"][1].placeholderText() == "blank = ClustalW default, 15"
+
+    everything = EngineParamsDialog(eng, {})              # no data loaded: show all
+    assert {"matrix", "dnamatrix"} <= set(everything._widgets)
+    prot._restore()
+    assert prot.values()["dnamatrix"] == "IUB"             # restore reaches hidden ones
+
+
+def test_the_window_asks_for_the_settings_of_the_data_the_engine_will_get(monkeypatch):
+    _app()
+    from craic.engines import ClustalWEngine
+    from craic.gui import app as app_mod
+
+    seen = {}
+
+    class Recorder:
+        def __init__(self, engine, values, parent=None, alphabet=None):
+            seen["alphabet"] = alphabet
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(app_mod, "EngineParamsDialog", Recorder)
+    win = CraicWindow()
+    win._set_alignment(Alignment(["a", "b"], ["ATGAAACCC", "ATGAAGCCC"], Alphabet.DNA))
+    eng = ClustalWEngine()
+    win.engine_combo.clear()
+    win.engine_combo.addItem(eng.label, eng)
+    win.codon_chk.setChecked(False)
+    win._edit_engine_params()
+    assert seen["alphabet"] == Alphabet.DNA
+    win.codon_chk.setChecked(True)                         # align as protein
+    win._edit_engine_params()
+    assert seen["alphabet"] == Alphabet.PROTEIN
+
+
+def test_the_settings_reach_anchored_realign_and_the_sandbox(monkeypatch):
+    _app()
+    from craic import editing
+    from craic.engines import BuiltinProgressive
+
+    win = CraicWindow()
+    aln = progressive.align([("a", "ACGTACGTAC"), ("b", "ACGTAACGTAC"),
+                             ("c", "ACGAACGTAC")], Alphabet.DNA)
+    win._set_alignment(aln)
+    eng = BuiltinProgressive()
+    win.engine_combo.clear()
+    win.engine_combo.addItem(eng.label, eng)
+    win._engine_params[eng.key] = {"delta": 0.07}
+    seen = {}
+
+    def fake(aln, anchors, engine, **opts):
+        seen.update(opts)
+        return aln
+
+    monkeypatch.setattr(editing, "anchored_realign", fake)
+    monkeypatch.setattr(win, "_pins", lambda: [2])
+    win._anchored_realign()
+    assert seen["delta"] == 0.07
+    assert win.sandbox.params_for(eng)["delta"] == 0.07
+
+
 def test_align_shows_progress_and_recovers_on_cancel():
     _app()
     win = CraicWindow()
@@ -852,3 +954,67 @@ def test_friendly_open_error_is_concise():
     assert huge not in text                    # the giant sequence is gone
     assert len(text) < 400
     assert "AEDAE" in text and "presence-absence" in text
+
+
+def test_an_edit_is_one_undo_step():
+    """Hand edits used to push the previous alignment twice, so the second Undo
+    after one edit appeared to do nothing."""
+    _app()
+    from craic import editing
+
+    win = CraicWindow()
+    win._set_alignment(Alignment(["a", "b"], ["AC-GT", "ACTGT"], Alphabet.DNA))
+    before = win.aln
+    win._apply_edit(editing.insert_gap_column(win.aln, 1), "gap")
+    assert len(win._undo_stack) == 1
+    win._undo()
+    assert win.aln is before and not win._undo_stack
+
+
+def test_masking_residues_is_an_undoable_edit_that_survives_realigning(tmp_path, monkeypatch):
+    _app()
+    from PySide6.QtWidgets import QFileDialog
+
+    from craic import io
+    from craic.ambiguity import reliability as rel_mod
+    from craic.engines import BuiltinProgressive
+
+    win = CraicWindow()
+    win._set_alignment(progressive.align(
+        [("a", "ATGAAAACCGCATATATTGCAAAA"), ("b", "ATGAAAACCGCATATGGGATTGCAAAA"),
+         ("c", "ATGAAAACCGCGTATATTGCAAAA")], Alphabet.DNA))
+    win.canvas.set_selected_rows({1})
+    win.canvas.select_nt_range(12, 18)
+    win._mask_selected_residues(True)
+    mask = rel_mod.residue_mask(win.aln)
+    assert list(mask) == ["b"] and len(mask["b"]) == 6
+    assert win.aln.meta["history"][-1] == "masked 6 residue(s)"
+    assert win.canvas._cell_masked(1, 13)
+
+    records = [(i, r.replace("-", "")) for i, r in zip(win.aln.ids, win.aln.rows)]
+    win._commit(BuiltinProgressive().align(records, Alphabet.DNA, effort="min"), "aligned")
+    assert rel_mod.residue_mask(win.aln) == mask          # the residues, not the columns
+
+    out = tmp_path / "masked.fasta"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    win._export_masked()
+    back = io.load_alignment(str(out))
+    assert back.length == win.aln.length                  # no column dropped
+    assert back.rows[1].replace("-", "")[12:18] == "NNNNNN"
+
+    win._undo()                                           # back past the realignment
+    win._undo()                                           # and past the mask
+    assert not rel_mod.residue_mask(win.aln)
+
+
+def test_help_menu_credits_author_and_citation():
+    from craic import AUTHOR_URL, CITATION, WEBSITE, __author__
+    from craic.gui.app import about_box
+
+    _app()
+    win = CraicWindow()
+    texts = [a.text() for a in _menu(win, "Help").actions()]
+    assert texts == ["CRAIC website", "About CRAIC and how to cite it…"]
+    box = about_box(win)
+    for s in (__author__, AUTHOR_URL, WEBSITE, CITATION):
+        assert s in box.text()

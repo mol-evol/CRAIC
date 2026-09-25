@@ -110,9 +110,14 @@ python -m craic examples/coding_genes.fasta
 ## Optional: external aligners
 
 CRAIC auto-detects these on your `PATH` and offers them in the engine menu and the
-multi-aligner disagreement map: **MAFFT**, **MUSCLE**, **Clustal Omega**, **PRANK**.
-None are required — the built-in aligner always works — but installing one or more
-gives you stronger alignments and a more informative disagreement comparison.
+multi-aligner disagreement map: **MAFFT**, **MUSCLE**, **Clustal Omega**, **ProbCons**,
+**PRANK** and **ClustalW**. None are required — the built-in aligner always works — but
+installing one or more gives you stronger alignments and a more informative disagreement
+comparison. All six are on Bioconda:
+
+```bash
+conda install -c bioconda mafft muscle clustalo probcons prank clustalw
+```
 
 ## Verifying the install
 

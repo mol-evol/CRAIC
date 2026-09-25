@@ -11,6 +11,9 @@ and a **perturbation** score (how many of a residue's asserted homologies surviv
 under perturbed conditions). Choose **Reliability** from the **Track** dropdown (it computes on
 first use), then read it on the track, as
 **Confidence** colouring, or as a live mask preview via the **Mask** slider.
+To keep the columns and drop only the unreliable residues in them, use **Mask
+residues below the threshold** (Edit ▸ Edit alignment) — see
+[residue masks](figures-and-curation.md#masking-residues-instead-of-columns).
 
 ## 2 · Multi-aligner disagreement map
 

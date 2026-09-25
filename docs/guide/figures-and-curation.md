@@ -72,6 +72,24 @@ all recorded on the provenance log and fully undoable:
 | **Pin selected columns** (`Ctrl/⌘ P`) | Mark the selected columns as trusted. Pinned columns are drawn with a gold bar above the grid. |
 | **Unpin selected columns** (`Ctrl/⌘ ⇧ P`) / **Clear all pins** | Remove pins. |
 | **Realign around pinned columns** | Keep the pinned columns fixed and let the engine re-solve only the uncertain stretches between them. The pins move with their columns, so the blocks you trust stay pinned afterwards. |
+| **Mask selected residues** (`Ctrl/⌘ K`) | Mark the residues under the selection (the selected sequences across the selected columns, or just the residue under the cursor) as unreliable. The column stays; the residues are drawn grey and hatched. |
+| **Unmask selected residues** (`Ctrl/⌘ ⇧ K`) / **Clear residue masks** | Remove residue masks. |
+| **Mask residues below the threshold** | Mask every residue whose reliability is below the **Mask** slider's value, keeping every column. |
+
+### Masking residues instead of columns
+
+Masking a column removes every residue in it, including the ones that are aligned
+correctly, and on a tree that costs more signal than the error it removes. A
+residue mask removes only what you judge wrong. **Export masked…** writes each
+masked residue as missing data — `N` for nucleotides, `X` for amino acids — which
+every tree program ignores without losing the rest of the column; if a column
+mask is also showing, both are applied.
+
+A residue mask belongs to the residues, not the columns, so it follows them
+through edits and realignment, is saved in the session, and every change to it is
+on the undo stack and the History. On the command line,
+`craic mask aln.fasta --residues -o masked.fasta` masks residues below the
+threshold instead of dropping columns.
 
 Manual edits to gap structure drop the coding annotation (a hand-made gap can break
 the reading frame); residue nudges keep it, since they don't move columns.

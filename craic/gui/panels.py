@@ -353,6 +353,9 @@ class SandboxPanel(QWidget):
         super().__init__(parent)
         self.aln: Optional[Alignment] = None
         self.engines: Sequence[AlignerEngine] = []
+        #: engine -> its parameter values. The window sets this to its own
+        #: settings lookup, so alternatives use what the ⚙ dialog holds.
+        self.params_for = lambda engine: {}
         self.region: Optional[Tuple[int, int]] = None
         self._alts: List[sandbox_mod.Alternative] = []
         self.codon_aware = False
@@ -422,6 +425,7 @@ class SandboxPanel(QWidget):
         self.gen_btn.setEnabled(False)
         self._cancelled = False
         engines = list(self.engines)
+        params_by_key = {e.key: self.params_for(e) for e in engines}
         aln = self.aln
         codon_aware, table, level = self.codon_aware, self.table, self.view_level
 
@@ -437,6 +441,7 @@ class SandboxPanel(QWidget):
         def work(report, cancelled):
             return sandbox_mod.alternatives(aln, c0, c1, engines, codon_aware=codon_aware,
                                             table=table, level=level,
+                                            params_by_key=params_by_key,
                                             progress=report, cancelled=cancelled)
 
         self._cancel_token = run_cancellable(work, self._on_alts, self._on_err,

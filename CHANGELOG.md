@@ -1,5 +1,104 @@
 # Changelog
 
+## 0.5.10 — every engine's settings, and ClustalW
+
+**PRANK was run with the wrong gap costs.** CRAIC always passed
+`-gaprate=0.025 -gapext=0.5`. PRANK's own defaults depend on the data — DNA
+0.025 / 0.75, protein 0.005 / 0.5 — so every protein run used five times PRANK's
+gap-opening rate and every DNA run a lower extension probability, whether or not
+anyone had touched the settings. The BAliBASE PRANK rows in `docs/validation.md`
+are re-run with PRANK's own defaults: SP 0.686 → 0.714, TC 0.470 → 0.506. Every
+other aligner's numbers, and every conclusion, are unchanged.
+
+The fix is general: a numeric parameter can now default to *blank*, which means
+CRAIC passes no flag and the tool chooses. The dialog shows the field empty with
+what the tool will do instead ("blank = PRANK default (DNA 0.025, protein
+0.005)"), and the History leaves those settings out.
+
+**Settings reached only two of the places an engine runs.** The ⚙ values were
+used by **Align** and the **Aligner agreement** track, but not by the
+realignment sandbox, **Realign around pinned columns**, the ensemble
+co-occurrence figure, or MUSCLE at all. They now are.
+
+**More of each tool's settings are offered.**
+
+- Built-in: gap open and extension probabilities (δ, ε; blank estimates them
+  from the data, as before), the protein matrix (BLOSUM45, 50, 62, 80, 90), and
+  consistency and refinement passes.
+- MAFFT: local-pair gap costs `--lop` / `--lep` (the ones L-INS-i and E-INS-i
+  use), `--maxiterate`, the protein matrix (`--bl`, `--jtt`, `--tm`) and the DNA
+  model (`--kimura`).
+- MUSCLE 5: `-super5`, `-perm` and `-perturb`. MUSCLE 5 has no gap penalties.
+- Clustal Omega: `--full` and the guide-tree and HMM iteration caps. It has no
+  gap penalties either.
+- ProbCons: consistency passes (`-c`) and pre-training (`-pre`).
+- PRANK: `+F`, `-iterate` and `-termgap`.
+
+**ClustalW is a new engine**, for teaching gap costs: opening and extension
+penalties for both the pairwise and the progressive stage, the protein matrix
+series and DNA matrix, gap separation distance, and the residue-specific and
+hydrophilic gap adjustments. Its gap costs are blank by default because
+ClustalW's defaults also differ between DNA and protein.
+
+**The settings dialog follows the data.** It shows only the settings that apply
+to what the engine will be handed — protein or nucleotide, and protein when
+*align as protein* is on — and a blank field names the default the tool will
+use for that data ("blank = ClustalW default, 10"). Hidden settings keep their
+values, and the History lists only the settings that applied. `craic engines`
+marks the one-alphabet settings.
+
+**Residue masks.** Masking a column throws away its correctly aligned residues
+along with the wrong ones, and on a tree that costs more signal than the error
+it removes. A residue mask removes only what you judge wrong: select residues and
+**Mask selected residues** (Ctrl/⌘K), or **Mask residues below the threshold**
+to mask every residue whose own reliability is below the Mask slider. The
+columns are kept; **Export masked…** writes each masked residue as missing data
+(`N` or `X`). The mask names residues, not columns, so it follows them through
+edits and realignment, is saved in sessions, and every change is on the undo
+stack and the History. `craic mask --residues` does the same on the command
+line.
+
+**One undo step per edit.** A hand edit pushed the previous alignment onto the
+undo stack twice, so the second Undo after one edit appeared to do nothing.
+
+**Does masking residues rescue the tree? No.** On the 360 simulated datasets,
+masking the lowest-scoring residues — exactly as many as the column mask removes
+— gives worse trees than masking the columns (Robinson–Foulds +0.09,
+neighbour-joining and maximum likelihood alike), and only a little better than
+masking as many residues at random. The residues the score flags carry signal
+as well as error at the default threshold; residue masks are for hand curation,
+not a better automatic filter. Details in `docs/validation.md`.
+
+**Benchmark harness.** `--engines` restricts a run to named engines (used to
+re-run PRANK alone); `--tree ml` measures tree error with IQ-TREE (JC+G4)
+instead of neighbour-joining; simulation runs report tree error when the same
+score masks residues instead of columns — at the threshold, matched to the
+number of residues the column mask removed, and for that many at random. A
+results file written by an older harness is rewritten under the current header
+when a run resumes, rather than having rows appended that do not line up.
+
+**Credit and citation.** A **Help** menu opens the website and an About box that
+names the author, links to <https://mol-evol.github.io/>, and gives the citation with a
+button that copies it; the splash screen shows the author's website, and
+`craic --version` and `craic --help` point to the About page. The citation (the bioRxiv
+preprint while the paper is under review) is in `CITATION.cff`, the README and the new
+**About & citation** page, and a test checks they agree. The website gains a home page,
+top-level tabs, and a footer crediting the author on every page.
+
+**Raw results.** `benchmarks/results/` now holds the PRANK re-run (in place of
+the old PRANK rows in `balibase_official.csv` and `prank_percol.csv`) and the
+residue-masking runs (`residue_masking_nj.csv`, `residue_masking_ml.csv`); its
+README says which file is behind which table.
+
+**Command line.** `craic align --param KEY=VALUE` (repeatable) sets any engine
+parameter, checked against the engine's own list, and `craic engines` lists them
+with ranges and defaults. A new parameter on an engine appears in both without
+touching the CLI.
+
+Every engine was run on DNA and protein with each of its settings changed in
+turn, against MAFFT 7.505, MUSCLE 5.2, Clustal Omega 1.2.4, ProbCons 1.12,
+PRANK v.170427 and ClustalW 2.1. 263 tests pass with the Rust core, 260 + 3 skipped on NumPy.
+
 ## 0.5.9 — the benchmark, re-run and re-scoped
 
 `docs/validation.md` is regenerated. Every number on it changed, because the

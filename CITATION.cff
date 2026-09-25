@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use CRAIC in your research, please cite it."
+message: "If you use CRAIC in your research, please cite the paper given under preferred-citation."
 title: "CRAIC: Conserved-Region Alignment by Iterative Convergence"
 abstract: >-
   CRAIC is a desktop multiple sequence alignment workbench focused on alignment
@@ -10,7 +10,25 @@ type: software
 authors:
   - family-names: McInerney
     given-names: James
+    affiliation: "University of Liverpool"
+    orcid: "https://orcid.org/0000-0003-1885-2503"
+    website: "https://mol-evol.github.io/"
 repository-code: "https://github.com/mol-evol/craic"
 url: "https://mol-evol.github.io/craic/"
 license: MIT
-version: 0.5.1
+version: 0.5.10
+# While the paper is under review this is the bioRxiv preprint. Add its doi when
+# bioRxiv posts it; when the paper is published, replace this block with the
+# journal article. See docs/editing-docs.md for the other places to update.
+preferred-citation:
+  type: article
+  title: "CRAIC: interactive interrogation of multiple sequence alignment uncertainty"
+  authors:
+    - family-names: McInerney
+      given-names: James
+      affiliation: "University of Liverpool"
+      orcid: "https://orcid.org/0000-0003-1885-2503"
+      website: "https://mol-evol.github.io/"
+  journal: "bioRxiv"
+  year: 2026
+  notes: "Preprint; link to follow."

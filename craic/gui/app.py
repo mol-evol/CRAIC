@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QTabWidget, QToolBar, QToolButton,
 )
 
-from .. import accel, editing, figures, io, session as session_mod
+from .. import AUTHOR_URL, CITATION, WEBSITE, accel, editing, figures, io, session as session_mod
 from ..ambiguity import disagreement as disagree_mod
 from ..ambiguity import ensemble as ensemble_mod
 from ..ambiguity import posterior as post_mod
@@ -124,6 +124,7 @@ class CraicWindow(QMainWindow):
         self.setCentralWidget(self.canvas)
 
         self.sandbox = SandboxPanel()
+        self.sandbox.params_for = self._params_for     # the ⚙ settings reach the sandbox
         self.sandbox.applied.connect(lambda a: self._set_alignment(a))
         self.posterior = PosteriorPanel()
         self.inspector = ColumnInspector()
@@ -201,6 +202,17 @@ class CraicWindow(QMainWindow):
         unpin.triggered.connect(self._unpin_selected)
         unpin_all = QAction("Clear all pins", self); unpin_all.triggered.connect(self._clear_pins)
         ar = QAction("Realign around pinned columns…", self); ar.triggered.connect(self._anchored_realign)
+        rm = QAction("Mask selected residues", self); rm.setShortcut("Ctrl+K")
+        rm.setToolTip("Mark residues you judge misaligned. The column is kept; on "
+                      "export they are written as missing data (N or X).")
+        rm.triggered.connect(lambda: self._mask_selected_residues(True))
+        ru = QAction("Unmask selected residues", self); ru.setShortcut("Ctrl+Shift+K")
+        ru.triggered.connect(lambda: self._mask_selected_residues(False))
+        rt = QAction("Mask residues below the threshold", self)
+        rt.setToolTip("Mask every residue whose reliability is below the Mask "
+                      "slider's value, keeping all columns.")
+        rt.triggered.connect(self._mask_residues_below)
+        rc = QAction("Clear residue masks", self); rc.triggered.connect(self._clear_residue_masks)
         edit_align = QMenu("Edit alignment", self)
         for a in (undo, redo):
             edit_align.addAction(a)
@@ -210,7 +222,11 @@ class CraicWindow(QMainWindow):
         edit_align.addSeparator()
         for a in (pin, unpin, unpin_all, ar):
             edit_align.addAction(a)
-        self._edit_actions = [undo, redo, nl, nr, ig, dc, pin, unpin, unpin_all, ar]
+        edit_align.addSeparator()
+        for a in (rm, ru, rt, rc):
+            edit_align.addAction(a)
+        self._edit_actions = [undo, redo, nl, nr, ig, dc, pin, unpin, unpin_all, ar,
+                              rm, ru, rt, rc]
         cmp = QAction("Compare with alignment…", self)
         cmp.triggered.connect(self._compare_alignment)
         # Teaching: a dataset whose answer is known, and the answer itself.
@@ -297,12 +313,23 @@ class CraicWindow(QMainWindow):
         teach_btn.setText("Teach")
         teach_btn.setPopupMode(QToolButton.InstantPopup)
         teach_btn.setMenu(teach_menu)
+        # Help: the website, and who made CRAIC and how to cite it.
+        help_menu = QMenu(self)
+        web_act = QAction("CRAIC website", self)
+        web_act.triggered.connect(lambda: _open_url(WEBSITE))
+        about_act = QAction("About CRAIC and how to cite it…", self)
+        about_act.triggered.connect(self._show_about)
+        help_menu.addAction(web_act); help_menu.addAction(about_act)
+        help_btn = QToolButton()
+        help_btn.setText("Help")
+        help_btn.setPopupMode(QToolButton.InstantPopup)
+        help_btn.setMenu(help_menu)
         # Tool buttons default to a smaller font than the neighbouring labels and
         # buttons; match the app font so the whole ribbon reads at one size.
-        for b in (file_btn, edit_btn, view_btn, teach_btn):
+        for b in (file_btn, edit_btn, view_btn, teach_btn, help_btn):
             b.setFont(QApplication.font())
         tb.addWidget(file_btn); tb.addWidget(edit_btn); tb.addWidget(view_btn)
-        tb.addWidget(teach_btn); tb.addSeparator()
+        tb.addWidget(teach_btn); tb.addWidget(help_btn); tb.addSeparator()
         # Actions that only make sense once an alignment is loaded.
         self._doc_actions = [sv, *self._session_actions, ei, em, hi, sa, srt, deg, hot, cmp,
                              *self._copy_actions, *self._fig_actions, *self._edit_actions]
@@ -616,6 +643,14 @@ class CraicWindow(QMainWindow):
                 pins = list(self.aln.meta.get("anchors", ()))
                 if pins:
                     new_aln.meta["anchors"] = pins
+        # A residue mask names residues, not columns, and no edit or realignment
+        # changes a sequence's residues, so it is carried whatever the width.
+        # residue_mask() drops anything that no longer fits.
+        if rel_mod.RESIDUE_MASK_KEY not in new_aln.meta and self.aln is not None:
+            carried = rel_mod.residue_mask(rel_mod.with_residue_mask(
+                new_aln, rel_mod.residue_mask(self.aln)))
+            if carried:
+                new_aln.meta[rel_mod.RESIDUE_MASK_KEY] = carried
         if self.aln is not None:
             self._undo_stack.append(self.aln)
             self._redo_stack.clear()
@@ -1096,6 +1131,7 @@ class CraicWindow(QMainWindow):
         self.canvas.set_alignment(aln)
         self.canvas.set_annotations(self._annotations)
         self.canvas.set_pins(aln.meta.get("anchors", ()))
+        self.canvas.set_residue_mask(rel_mod.masked_cells(aln, rel_mod.residue_mask(aln)))
         self._sync_engine_combo()
         self.canvas.set_column_scores(None)
         self.canvas.set_keep_mask(None)
@@ -1397,7 +1433,8 @@ class CraicWindow(QMainWindow):
             QMessageBox.information(self, engine.label,
                                     "This aligner has no tunable parameters in CRAIC.")
             return
-        dlg = EngineParamsDialog(engine, self._params_for(engine), self)
+        dlg = EngineParamsDialog(engine, self._params_for(engine), self,
+                                 alphabet=self._engine_alphabet() if self.aln else None)
         if dlg.exec():
             self._engine_params[engine.key] = dlg.values()
             self.statusBar().showMessage(f"{engine.label} parameters updated", 3000)
@@ -1425,7 +1462,11 @@ class CraicWindow(QMainWindow):
             return
         if self._want_aa:
             engine = CodonAware(engine, table=self._current_code())
-        self._align_note = engine.label + (f" ({_fmt_params(params)})" if params else "")
+        # the History lists only settings that mean something for this data
+        handed = self._engine_alphabet()
+        shown = _fmt_params({p.key: params[p.key] for p in engine.parameters()
+                             if p.applies_to(handed) and p.key in params})
+        self._align_note = engine.label + (f" ({shown})" if shown else "")
         records = self._source_records()
         alphabet = self.aln.alphabet
         self.align_btn.setEnabled(False)
@@ -1649,7 +1690,9 @@ class CraicWindow(QMainWindow):
             figures.homology_arcs(aln, v["seq_i"], v["seq_j"], c0, c1, path, theme=theme)
         elif kind == "cooc":
             engines = self._engines if len(self._engines) > 1 else builtin_variants()
-            co, ci, cj, n = ensemble_mod.cooccurrence(aln, v["seq_i"], v["seq_j"], c0, c1, engines)
+            co, ci, cj, n = ensemble_mod.cooccurrence(
+                aln, v["seq_i"], v["seq_j"], c0, c1, engines,
+                params_by_key={e.key: self._params_for(e) for e in engines})
             figures.matrix_heatmap(co, list(ci), list(cj), path, theme=theme,
                                    title="Ensemble co-occurrence",
                                    subtitle=f"{aln.ids[v['seq_i']]} vs {aln.ids[v['seq_j']]} · "
@@ -1742,9 +1785,7 @@ class CraicWindow(QMainWindow):
             # backstop for any path that does not come through the canvas.
             self.sel_lbl.setText("the true alignment is read-only — Ctrl+T to go back")
             return
-        self._undo_stack.append(self.aln)
-        self._redo_stack.clear()
-        self._commit(new_aln, note)
+        self._commit(new_aln, note)               # pushes the undo entry itself
 
     def _undo(self):
         if not self._undo_stack:
@@ -1936,6 +1977,79 @@ class CraicWindow(QMainWindow):
         self._set_pins(())
         self.sel_lbl.setText("pins cleared")
 
+    # ------------------------------------------------------------------ #
+    # Residue masks
+    # ------------------------------------------------------------------ #
+    # Held in ``aln.meta`` by residue (see reliability.residue_mask), so they
+    # follow their residues through edits and realignment and travel in
+    # sessions. Changing one is an edit: it goes on the undo stack and the
+    # History, since a mask is a curation decision someone may need to retrace.
+
+    def _selected_residues(self) -> Optional[dict]:
+        """Residues under the selection: the selected sequences (or the cursor's)
+        across the selected columns (or the cursor's column)."""
+        rows = sorted(self.canvas.selected_rows())
+        nt = self.canvas.selection_nt()
+        if nt is None and self.canvas.cursor() is not None and self.canvas.dm is not None:
+            c = self.canvas.cursor()[1]
+            s = self.canvas.dm.nt_start[c]
+            nt = (s, s + self.canvas.dm.span)
+        if not rows or nt is None:
+            return None
+        return rel_mod.residues_in(self.aln, rows, nt[0], nt[1])
+
+    def _mask_selected_residues(self, on: bool):
+        if not self.aln:
+            return
+        picked = self._selected_residues()
+        if picked is None:
+            QMessageBox.information(
+                self, "Mask residues",
+                "Click a residue, or select sequences and a range of columns, "
+                "first.\n\nMasked residues stay in the alignment and the column "
+                "is kept; when you export, each is written as missing data (N for "
+                "nucleotides, X for amino acids), so a tree program ignores it "
+                "without losing the rest of the column.")
+            return
+        current = rel_mod.residue_mask(self.aln)
+        new = rel_mod.merge_masks(current, picked) if on else rel_mod.subtract_masks(current, picked)
+        changed = rel_mod.mask_size(new) - rel_mod.mask_size(current)
+        if not changed:
+            self.sel_lbl.setText("no change to the residue mask")
+            return
+        verb = "masked" if on else "unmasked"
+        self._apply_edit(rel_mod.with_residue_mask(self.aln, new),
+                         f"{verb} {abs(changed)} residue(s)")
+        self.sel_lbl.setText(f"{verb} {abs(changed)} residue(s); "
+                             f"{rel_mod.mask_size(new)} masked in all")
+
+    def _mask_residues_below(self):
+        if not self.aln:
+            return
+        thr = self.thr.value() / 100.0
+
+        def apply():
+            below = rel_mod.residues_below(self.aln, self.reliability.cell_combined, thr)
+            current = rel_mod.residue_mask(self.aln)
+            new = rel_mod.merge_masks(current, below)
+            added = rel_mod.mask_size(new) - rel_mod.mask_size(current)
+            if not added:
+                self.sel_lbl.setText(f"no unmasked residue scores below {thr:.2f}")
+                return
+            self._apply_edit(rel_mod.with_residue_mask(self.aln, new),
+                             f"masked {added} residue(s) with reliability < {thr:.2f}")
+            self.sel_lbl.setText(f"masked {added} residue(s) below {thr:.2f}; "
+                                 f"{rel_mod.mask_size(new)} masked in all")
+
+        self._ensure_reliability(apply)
+
+    def _clear_residue_masks(self):
+        if not self.aln or not rel_mod.residue_mask(self.aln):
+            return
+        n = rel_mod.mask_size(rel_mod.residue_mask(self.aln))
+        self._apply_edit(rel_mod.with_residue_mask(self.aln, {}), f"cleared {n} residue mask(s)")
+        self.sel_lbl.setText("residue masks cleared")
+
     def _anchored_realign(self):
         if not self.aln:
             return
@@ -1951,7 +2065,8 @@ class CraicWindow(QMainWindow):
             return
         engine = self.engine_combo.currentData()
         try:
-            new = editing.anchored_realign(self.aln, anchors, engine)
+            new = editing.anchored_realign(self.aln, anchors, engine,
+                                           **self._params_for(engine))
         except Exception as exc:
             QMessageBox.critical(self, "Realign failed", str(exc)[:400])
             return
@@ -2114,12 +2229,17 @@ class CraicWindow(QMainWindow):
 
     def _export_masked(self):
         keep = self.canvas.keep_mask
-        if self.aln is None or keep is None:
+        residues = rel_mod.residue_mask(self.aln) if self.aln is not None else {}
+        if self.aln is None or (keep is None and not residues):
             QMessageBox.information(self, "Nothing to mask",
                                     "Pick a Track or trimming method first "
-                                    "(e.g. Reliability, Gblocks, or Conservation).")
+                                    "(e.g. Reliability, Gblocks, or Conservation), "
+                                    "or mask some residues.")
             return
-        masked = rel_mod.apply_mask(self.aln, np.asarray(keep, bool))
+        # Residues first, while their positions still mean something; then columns.
+        masked = rel_mod.apply_residue_mask(self.aln)
+        if keep is not None:
+            masked = rel_mod.apply_mask(masked, np.asarray(keep, bool))
         path, _ = QFileDialog.getSaveFileName(self, "Export masked alignment",
                                               "masked.fasta", "FASTA (*.fasta)")
         if path:
@@ -2297,6 +2417,44 @@ class CraicWindow(QMainWindow):
         self._idle()
         QMessageBox.critical(self, "Operation failed", msg[-1200:])
 
+    def _show_about(self):
+        """Who made CRAIC, where it lives, and how to cite it (with a button that
+        copies the citation)."""
+        box = about_box(self)
+        copy_btn = box.addButton("Copy citation", QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Close)
+        box.exec()
+        if box.clickedButton() is copy_btn:
+            QApplication.clipboard().setText(CITATION)
+            self.statusBar().showMessage("Citation copied.", 4000)
+
+
+def about_box(parent=None) -> QMessageBox:
+    """The About box: version, author (linked to his website), the CRAIC website,
+    the citation and the licence. Links open in the browser."""
+    from .. import __author__, __version__
+
+    box = QMessageBox(parent)
+    box.setWindowTitle("About CRAIC")
+    box.setTextFormat(Qt.RichText)
+    box.setTextInteractionFlags(Qt.TextBrowserInteraction)
+    box.setStyleSheet("QLabel{min-width: 460px;}")       # keep the links on one line
+    box.setText(
+        f"<h3>CRAIC {__version__}</h3>"
+        f"<p>Written by <b>{__author__}</b> — "
+        f"<a href='{AUTHOR_URL}'>{AUTHOR_URL}</a></p>"
+        f"<p>Website and documentation: <a href='{WEBSITE}'>{WEBSITE}</a></p>"
+        f"<p><b>If you use CRAIC, please cite:</b><br>{CITATION}</p>"
+        f"<p>Free and open-source software under the MIT licence.</p>")
+    return box
+
+
+def _open_url(url: str) -> None:
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QDesktopServices
+
+    QDesktopServices.openUrl(QUrl(url))
+
 
 def _make_splash():
     """A programmatic splash / about screen (no image asset needed): program name,
@@ -2336,7 +2494,9 @@ def _make_splash():
 
     p.setPen(QColor("#8a97a6"))
     f4 = QFont(); f4.setPointSize(10); p.setFont(f4)
-    p.drawText(QRect(0, 244, w, 20), Qt.AlignCenter, f"version {__version__}")
+    p.drawText(QRect(0, 236, w, 20), Qt.AlignCenter,
+               AUTHOR_URL.removeprefix("https://").rstrip("/"))
+    p.drawText(QRect(0, 256, w, 20), Qt.AlignCenter, f"version {__version__}")
     p.end()
 
     splash = QLabel()

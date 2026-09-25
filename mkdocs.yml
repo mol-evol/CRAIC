@@ -1,6 +1,7 @@
 site_name: CRAIC
 site_description: "CRAIC — Conserved-Region Alignment by Iterative Convergence"
 site_url: "https://mol-evol.github.io/craic/"
+site_author: "James McInerney"
 repo_url: "https://github.com/mol-evol/craic"
 repo_name: "mol-evol/craic"
 edit_uri: "edit/main/docs/"
@@ -25,6 +26,7 @@ theme:
         icon: material/weather-night
         name: Switch to dark mode
   features:
+    - navigation.tabs
     - navigation.sections
     - navigation.top
     - navigation.instant
@@ -35,10 +37,11 @@ theme:
 
 nav:
   - Home: index.md
-  - Background & intent: background.md
-  - Installation: installation.md
-  - Getting started: getting-started.md
-  - Tutorial: tutorial.md
+  - Get started:
+      - Background & intent: background.md
+      - Installation: installation.md
+      - Getting started: getting-started.md
+      - Tutorial: tutorial.md
   - User guide:
       - The alignment viewer: guide/viewer.md
       - Ambiguity tools: guide/ambiguity-tools.md
@@ -59,8 +62,24 @@ nav:
   - Help:
       - FAQ & troubleshooting: faq.md
       - Glossary: glossary.md
-  - Architecture & development: development.md
-  - Editing these docs: editing-docs.md
+  - About:
+      - About & citation: about.md
+      - Architecture & development: development.md
+      - Editing these docs: editing-docs.md
+
+# Every page's footer credits the author and links to how to cite.
+copyright: >-
+  CRAIC is written by <a href="https://mol-evol.github.io/">James McInerney</a>
+  · MIT licence · <a href="https://mol-evol.github.io/craic/about/#how-to-cite-craic">How to cite CRAIC</a>
+
+extra:
+  social:
+    - icon: fontawesome/solid/house
+      link: https://mol-evol.github.io/
+      name: James McInerney's website
+    - icon: fontawesome/brands/github
+      link: https://github.com/mol-evol/craic
+      name: CRAIC on GitHub
 
 markdown_extensions:
   - admonition

@@ -70,7 +70,9 @@ them but cannot say which.
 **Intruder** — in the column inspector, a residue placed in a column that the
 reference puts somewhere else.
 
-**Masking** — removing columns judged unreliable before a downstream analysis.
+**Masking** — removing columns judged unreliable before a downstream analysis,
+or, with a **residue mask**, only the residues judged unreliable (written as
+missing data, `N` or `X`, with the column kept).
 CRAIC previews it live (dimmed columns) and exports the result. Whether it helps
 is an empirical question, and a threshold that removes hard columns will raise
 mean accuracy whatever rule picks them — hence the random and gap-matched

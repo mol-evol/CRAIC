@@ -34,7 +34,7 @@ from __future__ import annotations
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -324,6 +324,15 @@ class Reliability:
                   unscored: str = "drop") -> np.ndarray:
         return keep_mask(self.column_scores(which), threshold, unscored)
 
+    def cell_scores(self, which: str = "combined") -> np.ndarray:
+        """Per-residue scores (n x length, nan at gaps) — the residue analogue
+        of :meth:`column_scores`."""
+        return {
+            "combined": self.cell_combined,
+            "consistency": self.cell_consistency,
+            "perturbation": self.cell_perturbation,
+        }[which]
+
 
 def analyse(
     aln: Alignment,
@@ -350,4 +359,147 @@ def analyse(
 def apply_mask(aln: Alignment, keep_mask: np.ndarray) -> Alignment:
     keep = [c for c in range(aln.length) if keep_mask[c]]
     rows = ["".join(r[c] for c in keep) for r in aln.rows]
-    return Alignment(list(aln.ids), rows, aln.alphabet, coding=None, meta=dict(aln.meta))
+    meta = dict(aln.meta)
+    meta.pop(RESIDUE_MASK_KEY, None)        # residue indices no longer hold once columns go
+    return Alignment(list(aln.ids), rows, aln.alphabet, coding=None, meta=meta)
+
+
+# --------------------------------------------------------------------------- #
+# Residue masking
+# --------------------------------------------------------------------------- #
+#
+# Masking a column throws away every residue in it, including the ones that
+# are aligned correctly, and on a tree that costs more signal than the error it
+# removes (Tan et al. 2015). A residue mask removes only the residues judged
+# unreliable — by hand, or below a per-residue score — and keeps the column.
+#
+# A mask is kept in ``Alignment.meta`` as ``{sequence id: [residue indices]}``,
+# indices into the ungapped sequence. Keyed by residue rather than by column,
+# it follows its residues through any edit or realignment, since neither
+# changes a sequence's residues; and it is JSON-safe, so sessions carry it. It
+# changes nothing about the alignment until it is applied on export, where each
+# masked residue is written as missing data.
+
+RESIDUE_MASK_KEY = "masked_residues"
+
+ResidueMask = Dict[str, List[int]]
+
+
+def residue_mask(aln: Alignment) -> ResidueMask:
+    """The alignment's residue mask, validated against its sequences.
+
+    Entries for sequences that are not present, or indices beyond a sequence's
+    length, are dropped: a mask carried onto an alignment that does not hold
+    those residues must not mask something else.
+    """
+    raw = aln.meta.get(RESIDUE_MASK_KEY) or {}
+    lengths = {i: sum(ch != "-" for ch in r) for i, r in zip(aln.ids, aln.rows)}
+    out: ResidueMask = {}
+    for sid, idx in raw.items():
+        if sid in lengths:
+            keep = sorted({int(k) for k in idx if 0 <= int(k) < lengths[sid]})
+            if keep:
+                out[sid] = keep
+    return out
+
+
+def with_residue_mask(aln: Alignment, mask: ResidueMask) -> Alignment:
+    """A copy of ``aln`` carrying ``mask`` (an empty mask removes it)."""
+    meta = dict(aln.meta)
+    clean = {sid: sorted(set(idx)) for sid, idx in mask.items() if idx}
+    if clean:
+        meta[RESIDUE_MASK_KEY] = clean
+    else:
+        meta.pop(RESIDUE_MASK_KEY, None)
+    return Alignment(list(aln.ids), list(aln.rows), aln.alphabet,
+                     coding=aln.coding, meta=meta)
+
+
+def residues_in(aln: Alignment, rows: Sequence[int], col_start: int,
+                col_stop: int) -> ResidueMask:
+    """The residues of ``rows`` lying in columns [col_start, col_stop)."""
+    out: ResidueMask = {}
+    for si in rows:
+        idx = domain.residue_index(aln.rows[si])[col_start:col_stop]
+        picked = [r for r in idx if r >= 0]
+        if picked:
+            out[aln.ids[si]] = picked
+    return out
+
+
+def residues_below(aln: Alignment, cell_scores: np.ndarray,
+                   threshold: float) -> ResidueMask:
+    """Residues whose per-residue score is below ``threshold``.
+
+    An unscored residue (nan: nothing else in its column to be homologous to) is
+    not masked. Unlike an unscored column, it asserts no homology, so there is
+    nothing in it to be wrong.
+    """
+    cells = np.asarray(cell_scores, dtype=float)
+    if cells.shape != (aln.n_seqs, aln.length):
+        raise ValueError(f"cell scores are shaped {cells.shape}, "
+                         f"but the alignment is {(aln.n_seqs, aln.length)}")
+    out: ResidueMask = {}
+    for si, row in enumerate(aln.rows):
+        idx = domain.residue_index(row)
+        low = [idx[c] for c in range(aln.length)
+               if idx[c] >= 0 and cells[si, c] == cells[si, c] and cells[si, c] < threshold]
+        if low:
+            out[aln.ids[si]] = low
+    return out
+
+
+def merge_masks(a: ResidueMask, b: ResidueMask) -> ResidueMask:
+    return {sid: sorted(set(a.get(sid, [])) | set(b.get(sid, []))) for sid in {*a, *b}}
+
+
+def subtract_masks(a: ResidueMask, b: ResidueMask) -> ResidueMask:
+    out = {sid: sorted(set(idx) - set(b.get(sid, []))) for sid, idx in a.items()}
+    return {sid: idx for sid, idx in out.items() if idx}
+
+
+def mask_size(mask: ResidueMask) -> int:
+    return sum(len(v) for v in mask.values())
+
+
+def masked_cells(aln: Alignment, mask: ResidueMask) -> set:
+    """``(row, column)`` of every masked residue, for drawing."""
+    cells = set()
+    for si, (sid, row) in enumerate(zip(aln.ids, aln.rows)):
+        wanted = set(mask.get(sid, ()))
+        if wanted:
+            for c, r in enumerate(domain.residue_index(row)):
+                if r in wanted:
+                    cells.add((si, c))
+    return cells
+
+
+def missing_symbol(alphabet: Alphabet) -> str:
+    """How a masked residue is written: missing data to every tree program."""
+    return "N" if alphabet.is_nucleotide else "X"
+
+
+def apply_residue_mask(aln: Alignment, mask: Optional[ResidueMask] = None) -> Alignment:
+    """``aln`` with each masked residue replaced by N (nucleotides) or X (protein).
+
+    Columns are untouched. ``mask`` defaults to the alignment's own.
+    """
+    mask = residue_mask(aln) if mask is None else mask
+    sym = missing_symbol(aln.alphabet)
+    rows = []
+    for sid, row in zip(aln.ids, aln.rows):
+        wanted = set(mask.get(sid, ()))
+        if not wanted:
+            rows.append(row)
+            continue
+        out, r = [], 0
+        for ch in row:
+            if ch == "-":
+                out.append(ch)
+            else:
+                out.append(sym if r in wanted else ch)
+                r += 1
+        rows.append("".join(out))
+    meta = dict(aln.meta)
+    meta.pop(RESIDUE_MASK_KEY, None)
+    return Alignment(list(aln.ids), rows, aln.alphabet, coding=aln.coding, meta=meta)

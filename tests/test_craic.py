@@ -8,7 +8,8 @@ import pytest
 from craic import accel
 from craic.domain import Alignment, Alphabet, CodingSpec, Level, translate_codon
 from craic.engines import (
-    BuiltinProgressive, CodonAware, MafftEngine, Param, builtin_variants,
+    BuiltinProgressive, ClustalOmegaEngine, ClustalWEngine, CodonAware, MafftEngine,
+    MuscleEngine, Param, PrankEngine, ProbConsEngine, all_engines, builtin_variants,
 )
 from craic import io, progressive
 from craic.ambiguity import reliability, disagreement, sandbox, posterior
@@ -533,11 +534,33 @@ def test_disagreement_overlays_base_alignment():
 # --- bespoke aligner parameters ------------------------------------------- #
 
 def test_engine_parameters_are_params():
-    for p in BuiltinProgressive().parameters() + MafftEngine().parameters():
-        assert isinstance(p, Param)
-        assert p.kind in ("float", "int", "choice")
-        if p.kind == "choice":
-            assert p.default in (p.choices or [])
+    for eng in all_engines():
+        keys = [p.key for p in eng.parameters()]
+        assert len(keys) == len(set(keys)), eng.key
+        for p in eng.parameters():
+            assert isinstance(p, Param)
+            assert p.kind in ("float", "int", "choice", "bool")
+            if p.kind == "choice":
+                assert p.default in (p.choices or [])
+            if p.default is None:
+                # only a number can be left to the tool, and it must say what then
+                assert p.kind in ("float", "int") and p.blank, (eng.key, p.key)
+                for alph in (Alphabet.PROTEIN, Alphabet.DNA):
+                    assert p.blank_for(alph)
+            assert p.alphabet in ("", "protein", "nucleotide")
+
+
+def test_parameters_know_which_data_they_apply_to():
+    params = {p.key: p for p in ClustalWEngine().parameters()}
+    assert params["dnamatrix"].applies_to(Alphabet.DNA)
+    assert not params["dnamatrix"].applies_to(Alphabet.PROTEIN)
+    assert params["matrix"].applies_to(Alphabet.PROTEIN)
+    assert not params["matrix"].applies_to(Alphabet.RNA)
+    assert params["gapopen"].applies_to(Alphabet.PROTEIN)      # both kinds
+    assert params["dnamatrix"].applies_to(None)                # unknown: show it
+    assert params["gapopen"].blank_for(Alphabet.PROTEIN) == "ClustalW default, 10"
+    assert params["gapopen"].blank_for(Alphabet.DNA) == "ClustalW default, 15"
+    assert "10" in params["gapopen"].blank_for() and "15" in params["gapopen"].blank_for()
 
 
 def test_builtin_gap_regime_changes_alignment():
@@ -561,6 +584,143 @@ def test_mafft_command_honours_op_ep_strategy():
 def test_codon_aware_delegates_parameters():
     inner = BuiltinProgressive()
     assert CodonAware(inner).parameters() == inner.parameters()
+
+
+def test_prank_leaves_gap_costs_to_prank_unless_they_are_set():
+    """PRANK's gap defaults differ between DNA and protein. CRAIC used to pass
+    0.025 / 0.5 for both, overriding PRANK with values right for neither."""
+    for alph in (Alphabet.PROTEIN, Alphabet.DNA):
+        argv = PrankEngine._argv("in.fa", "out", alph)
+        assert not any(a.startswith(("-gaprate", "-gapext")) for a in argv)
+    argv = PrankEngine._argv("in.fa", "out", Alphabet.PROTEIN, gaprate=0.01, gapext=0.6,
+                             F=True, iterate=3, termgap=True)
+    assert {"-gaprate=0.01", "-gapext=0.6", "+F", "-iterate=3", "-termgap"} <= set(argv)
+    assert "-iterate=5" not in PrankEngine._argv("in.fa", "out", Alphabet.DNA, iterate=5)
+
+
+def test_mafft_matrix_follows_the_alphabet_and_maxiterate_overrides_the_strategy():
+    eng = MafftEngine()
+    prot, _ = eng._command("in.fa", "out.fa", Alphabet.PROTEIN, matrix="BLOSUM30", kimura="1 PAM")
+    assert prot[prot.index("--bl") + 1] == "30" and "--kimura" not in prot
+    dna, _ = eng._command("in.fa", "out.fa", Alphabet.DNA, matrix="BLOSUM30", kimura="1 PAM")
+    assert dna[dna.index("--kimura") + 1] == "1" and "--bl" not in dna
+    argv, _ = eng._command("in.fa", "out.fa", Alphabet.DNA,
+                           strategy="L-INS-i (accurate, local)", maxiterate=10,
+                           lop=-3.0, lep=0.2)
+    assert argv.count("--maxiterate") == 1 and argv[argv.index("--maxiterate") + 1] == "10"
+    assert argv[argv.index("--lop") + 1] == "-3.0" and argv[argv.index("--lep") + 1] == "0.2"
+
+
+def test_clustalw_passes_gap_costs_only_when_set_and_protein_switches_only_for_protein():
+    eng = ClustalWEngine()
+    argv, mode = eng._command("in.fa", "out.fa", Alphabet.PROTEIN)
+    assert mode == "file" and "-TYPE=PROTEIN" in argv and "-OUTPUT=FASTA" in argv
+    assert not any(a.startswith(("-GAPOPEN", "-GAPEXT", "-PWGAP")) for a in argv)
+    argv, _ = eng._command("in.fa", "out.fa", Alphabet.PROTEIN, gapopen=25.0, gapext=0.5,
+                           pwgapopen=12.0, pwgapext=0.3, matrix="BLOSUM", gapdist=8,
+                           nopgap=True, nohgap=True)
+    assert {"-GAPOPEN=25.0", "-GAPEXT=0.5", "-PWGAPOPEN=12.0", "-PWGAPEXT=0.3",
+            "-MATRIX=BLOSUM", "-GAPDIST=8", "-NOPGAP", "-NOHGAP"} <= set(argv)
+    argv, _ = eng._command("in.fa", "out.fa", Alphabet.DNA, dnamatrix="CLUSTALW",
+                           nopgap=True, gapdist=8)
+    assert "-TYPE=DNA" in argv and "-DNAMATRIX=CLUSTALW" in argv
+    assert not any(a.startswith(("-MATRIX", "-GAPDIST", "-NOPGAP")) for a in argv)
+
+
+def test_muscle_passes_its_v5_options(monkeypatch):
+    seen = []
+
+    class Failed:
+        returncode, stderr = 1, "no"
+
+    def fake_run(argv, timeout=None):
+        seen.append(argv)
+        return Failed()
+
+    monkeypatch.setattr(MuscleEngine, "_run", staticmethod(fake_run))
+    with pytest.raises(RuntimeError):
+        MuscleEngine().align([("a", "MKV"), ("b", "MKI")], Alphabet.PROTEIN,
+                             algorithm="super5", perm="abc", perturb=3)
+    v5 = seen[0]
+    assert v5[1] == "-super5" and v5[v5.index("-perm") + 1] == "abc"
+    assert v5[v5.index("-perturb") + 1] == "3"
+    assert "-perm" not in seen[1]                         # v3 has none of them
+
+
+def test_clustalo_and_probcons_options_reach_the_command():
+    argv, _ = ClustalOmegaEngine()._command("in.fa", "out.fa", Alphabet.PROTEIN,
+                                            iterations=2, full=True,
+                                            max_guidetree_iterations=1)
+    assert "--full" in argv and "--max-guidetree-iterations=1" in argv
+    assert not any(a.startswith("--max-hmm") for a in argv)
+    argv, _ = ProbConsEngine()._command("in.fa", "out.fa", Alphabet.PROTEIN,
+                                        consistency=0, iterations=100, pretraining=3)
+    assert argv[:5] == ["probcons", "-c", "0", "-pre", "3"]   # defaults left off
+
+
+def test_builtin_exposes_gap_probabilities_and_matrix():
+    keys = {p.key for p in BuiltinProgressive().parameters()}
+    assert {"delta", "epsilon", "matrix", "consistency_iters", "refine_iters"} <= keys
+    assert accel.emission_model("protein", matrix="BLOSUM62") is not \
+        accel.emission_model("protein", matrix="BLOSUM45")
+    recs = [("a", "MKVLAAGIVGLLLAHSQAENKTEWLK"), ("b", "MKVLAGIVALLLHSQAENKEWLK"),
+            ("c", "MRVLAAGIIGLLAHSEAENKTDWLRK")]
+    aln = BuiltinProgressive().align(recs, Alphabet.PROTEIN, effort="min",
+                                     delta=0.05, epsilon=0.4, matrix="BLOSUM62")
+    assert [r.replace("-", "") for r in aln.rows] == [s for _, s in recs]
+
+
+def test_param_reads_command_line_text():
+    strategy = next(p for p in MafftEngine().parameters() if p.key == "strategy")
+    assert strategy.coerce("L-INS-i") == "L-INS-i (accurate, local)"
+    with pytest.raises(ValueError):
+        strategy.coerce("fastest")
+    gaprate = next(p for p in PrankEngine().parameters() if p.key == "gaprate")
+    assert gaprate.coerce("0.01") == 0.01 and gaprate.coerce("") is None
+    with pytest.raises(ValueError):
+        gaprate.coerce("2")                               # out of 0-1
+    plus_f = next(p for p in PrankEngine().parameters() if p.key == "F")
+    assert plus_f.coerce("yes") is True and plus_f.coerce("false") is False
+
+
+def test_cli_param_is_checked_against_the_engine():
+    from craic.cli import _engine_opts, build_parser
+
+    assert _engine_opts(MafftEngine(), ["op=2.5", "strategy=G-INS-i"]) == {
+        "op": 2.5, "strategy": "G-INS-i (accurate, global)"}
+    with pytest.raises(SystemExit):
+        _engine_opts(MafftEngine(), ["gapopen=2"])        # ClustalW's name, not MAFFT's
+    with pytest.raises(SystemExit):
+        _engine_opts(MafftEngine(), ["op"])
+    args = build_parser().parse_args(["align", "x.fa", "--param", "op=2", "--param", "ep=1"])
+    assert args.param == ["op=2", "ep=1"]
+
+
+def test_cli_engines_lists_every_engine(capsys):
+    from craic.cli import cmd_engines
+
+    cmd_engines(None)
+    out = capsys.readouterr().out
+    for eng in all_engines():
+        assert out.count(f"{eng.key} — ") == 1
+    assert "gapopen" in out and "PRANK default, 0.005" in out
+    assert "dnamatrix: IUB | CLUSTALW  [default: IUB]  (nucleotide only)" in out
+
+
+def test_sandbox_runs_each_engine_with_its_settings():
+    seen = {}
+
+    class Recorder(BuiltinProgressive):
+        key = "recorder"
+
+        def align(self, records, alphabet, **opts):
+            seen.update(opts)
+            return super().align(records, alphabet, effort="min")
+
+    aln, _ = _ambiguous_dataset()
+    sandbox.alternatives(aln, 0, 20, [Recorder()], param_grid=[],
+                         params_by_key={"recorder": {"delta": 0.07}})
+    assert seen == {"delta": 0.07}
 
 
 def test_disagreement_accepts_params_by_key():
@@ -739,3 +899,87 @@ def test_trimming_masks_are_valid():
     for mask in (T.gappyout_mask(aln), T.trimal_strict_mask(aln), T.gblocks_mask(aln, b4=3)):
         assert mask.dtype == bool and mask.shape == (aln.length,)
     assert (T.similarity_score(aln) >= 0).all() and (T.similarity_score(aln) <= 1.0001).all()
+
+
+# --- residue masking -------------------------------------------------------- #
+
+def test_a_residue_mask_names_residues_and_keeps_columns():
+    aln = Alignment(["x", "y"], ["AC-GT", "ACTG-"], Alphabet.DNA)
+    picked = reliability.residues_in(aln, [0, 1], 1, 4)
+    assert picked == {"x": [1, 2], "y": [1, 2, 3]}
+    masked = reliability.with_residue_mask(aln, picked)
+    assert masked.rows == aln.rows                          # nothing changes until export
+    assert reliability.masked_cells(masked, picked) == {(0, 1), (0, 3), (1, 1), (1, 2), (1, 3)}
+    out = reliability.apply_residue_mask(masked)
+    assert out.rows == ["AN-NT", "ANNN-"] and out.length == aln.length
+    assert reliability.RESIDUE_MASK_KEY not in out.meta     # applied, so not carried
+    prot = Alignment(["x"], ["MK-V"], Alphabet.PROTEIN)
+    assert reliability.apply_residue_mask(prot, {"x": [1]}).rows == ["MX-V"]
+
+
+def test_a_residue_mask_follows_residues_and_drops_what_does_not_fit():
+    aln = Alignment(["x", "y"], ["AC-GT", "ACTG-"], Alphabet.DNA)
+    shifted = Alignment(["y", "x"], ["-ACTG", "ACG-T"], Alphabet.DNA,
+                        meta={reliability.RESIDUE_MASK_KEY: {"x": [2, 9], "z": [0]}})
+    # x's residue 2 is G wherever the gaps go; index 9 and sequence z do not exist
+    assert reliability.residue_mask(shifted) == {"x": [2]}
+    assert reliability.apply_residue_mask(shifted).rows == ["-ACTG", "ACN-T"]
+    # column masking removes residues, so it must not carry residue indices
+    carried = reliability.apply_mask(reliability.with_residue_mask(aln, {"x": [0]}),
+                                     np.array([False, True, True, True, True]))
+    assert reliability.RESIDUE_MASK_KEY not in carried.meta
+
+
+def test_residues_below_a_threshold_leave_unscored_residues_alone():
+    aln = Alignment(["x", "y"], ["AC-G", "ACTG"], Alphabet.DNA)
+    cells = np.array([[0.9, 0.2, np.nan, 0.6],
+                      [0.9, 0.3, np.nan, 0.4]])            # y's T at column 2 is unscored
+    assert reliability.residues_below(aln, cells, 0.5) == {"x": [1], "y": [1, 3]}
+    with pytest.raises(ValueError):
+        reliability.residues_below(aln, cells[:, :3], 0.5)
+    a, b = {"x": [1, 2]}, {"x": [2], "y": [0]}
+    assert reliability.merge_masks(a, b) == {"x": [1, 2], "y": [0]}
+    assert reliability.subtract_masks(a, b) == {"x": [1]}
+    assert reliability.mask_size(a) == 2
+
+
+def test_a_residue_mask_survives_a_session(tmp_path):
+    from craic.session import Session
+
+    aln = reliability.with_residue_mask(
+        Alignment(["x", "y"], ["AC-GT", "ACTG-"], Alphabet.DNA), {"y": [1, 3]})
+    path = str(tmp_path / "s.craic.json")
+    Session(alignment=aln).save(path)
+    assert reliability.residue_mask(Session.load(path).alignment) == {"y": [1, 3]}
+
+
+def test_cli_mask_residues_keeps_every_column(tmp_path, capsys):
+    from craic.cli import main
+
+    aln, _ = _ambiguous_dataset()
+    src, out = tmp_path / "a.fasta", tmp_path / "m.fasta"
+    io.save_alignment(str(src), aln)
+    with pytest.raises(SystemExit) as done:
+        main(["mask", str(src), "-o", str(out), "--residues", "--fast", "--threshold", "0.9"])
+    assert done.value.code == 0
+    back = io.load_alignment(str(out))
+    assert back.length == aln.length
+    assert any("N" in r for r in back.rows)
+    assert "all" in capsys.readouterr().err
+
+
+def test_citation_is_the_same_everywhere():
+    """The citation is written out in the package, the README and the website's
+    About page; this catches one of them being updated without the others."""
+    import re
+    from pathlib import Path
+
+    from craic import CITATION
+
+    root = Path(__file__).resolve().parents[1]
+
+    def norm(s):
+        return re.sub(r"\s+", " ", s.replace(">", " "))
+
+    for name in ("README.md", "docs/about.md"):
+        assert norm(CITATION) in norm((root / name).read_text(encoding="utf-8")), name

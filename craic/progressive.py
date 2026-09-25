@@ -418,6 +418,7 @@ def align(
     cancelled=None,
     guide_seed: Optional[int] = None,
     sparse: Optional[bool] = None,
+    matrix: Optional[str] = None,
 ) -> Alignment:
     """Progressive multiple alignment by posterior decoding, tiered by memory.
 
@@ -428,6 +429,9 @@ def align(
     single L x L matrix and the aligner scales to large inputs (less accurate; for
     large jobs an external engine is still preferable). ``progress(done, total)``
     is called before each merge and ``cancelled()`` is polled throughout.
+    ``matrix`` names the protein substitution matrix (default
+    ``accel.PROTEIN_MATRIX``); it is ignored for nucleotides and when ``model``
+    is given.
     """
     preset = _EFFORT.get(effort, _EFFORT["med"])
     consistency_iters = preset["consistency_iters"] if consistency_iters is None else consistency_iters
@@ -448,6 +452,7 @@ def align(
         return Alignment(list(ids), list(seqs), alphabet)
 
     kind = "protein" if alphabet == Alphabet.PROTEIN else "dna"
+    matrix = matrix or accel.PROTEIN_MATRIX
     n = len(seqs)
     maxlen = max(len(s) for s in seqs)
     will_sparsify = sparse_available() and maxlen >= SPARSE_MIN_LEN
@@ -456,7 +461,7 @@ def align(
 
     if model is None and estimate:
         # streaming plain-MEA pilot to read off divergence + gap rates (memory-safe)
-        pm = emission_model(kind)
+        pm = emission_model(kind, matrix=matrix)
 
         def pilot_post(x, y):
             return accel.posterior_matrix(seqs[x], seqs[y], pm, _DEFAULT_DELTA, _DEFAULT_EPSILON)
@@ -464,14 +469,14 @@ def align(
         pilot = [r for _, r in _progressive(seqs, pilot_post, cancelled=cancelled)]
         theta = round(min(0.95, max(0.55, _estimate_identity(pilot))), 2)
         gdelta, gepsilon = _estimate_gaps(pilot)
-        model = emission_model(kind, theta)
+        model = emission_model(kind, theta, matrix)
         if delta is None:
             delta = gdelta
         if epsilon is None:
             epsilon = gepsilon
 
     if model is None:
-        model = emission_model(kind)
+        model = emission_model(kind, matrix=matrix)
     if delta is None:
         delta = _DEFAULT_DELTA
     if epsilon is None:

@@ -108,14 +108,14 @@ def masking_gain(
 # Tree error (NJ + Robinson-Foulds)
 # --------------------------------------------------------------------------- #
 
-def _p_distance_matrix(names: List[str], rows: List[str]):
+def _p_distance_matrix(names: List[str], rows: List[str], missing: str = "-"):
     from Bio.Phylo.TreeConstruction import DistanceMatrix
     n = len(rows)
     lower = []
     for i in range(n):
         row = []
         for j in range(i):
-            m = [(a, b) for a, b in zip(rows[i], rows[j]) if a != "-" and b != "-"]
+            m = [(a, b) for a, b in zip(rows[i], rows[j]) if a not in missing and b not in missing]
             d = (sum(a != b for a, b in m) / len(m)) if m else 1.0
             row.append(d)
         row.append(0.0)
@@ -123,9 +123,11 @@ def _p_distance_matrix(names: List[str], rows: List[str]):
     return DistanceMatrix(names=list(names), matrix=lower)
 
 
-def nj_tree_bipartitions(names: List[str], rows: List[str]) -> set:
+def nj_tree_bipartitions(names: List[str], rows: List[str], missing: str = "-") -> set:
+    """Bipartitions of the NJ tree on p-distances. Characters in ``missing`` are
+    skipped pairwise, like gaps — pass ``"-N"`` for a residue-masked DNA alignment."""
     from Bio.Phylo.TreeConstruction import DistanceTreeConstructor
-    dm = _p_distance_matrix(names, rows)
+    dm = _p_distance_matrix(names, rows, missing)
     tree = DistanceTreeConstructor().nj(dm)
     all_leaves = frozenset(names)
     ref = min(all_leaves)
@@ -135,6 +137,39 @@ def nj_tree_bipartitions(names: List[str], rows: List[str]) -> set:
         if 2 <= len(side) <= len(all_leaves) - 2:
             canon = side if ref not in side else frozenset(all_leaves - side)
             bips.add(canon)
+    return bips
+
+
+def ml_tree_bipartitions(names: List[str], rows: List[str], missing: str = "-") -> Optional[set]:
+    """Bipartitions of the maximum-likelihood tree (IQ-TREE 2, JC+G4 — the
+    simulating model), or None if IQ-TREE cannot build one (a mask that left a
+    sequence with no data at all). IQ-TREE treats gaps and N as missing site by
+    site, which is the point of checking the neighbour-joining result with it.
+    ``missing`` is accepted for symmetry with :func:`nj_tree_bipartitions`."""
+    import os
+    import subprocess
+    import tempfile
+    from Bio import Phylo
+
+    with tempfile.TemporaryDirectory() as d:
+        fa = os.path.join(d, "a.fasta")
+        with open(fa, "w") as fh:
+            for n, r in zip(names, rows):
+                fh.write(f">{n}\n{r}\n")
+        try:
+            subprocess.run(["iqtree2", "-s", fa, "-m", "JC+G4", "--fast", "-T", "1",
+                            "--seed", "1", "-quiet", "-redo"], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            return None
+        tree = Phylo.read(fa + ".treefile", "newick")
+    all_leaves = frozenset(names)
+    ref = min(all_leaves)
+    bips = set()
+    for clade in tree.get_nonterminals():
+        side = frozenset(t.name for t in clade.get_terminals())
+        if 2 <= len(side) <= len(all_leaves) - 2:
+            bips.add(side if ref not in side else frozenset(all_leaves - side))
     return bips
 
 
@@ -157,6 +192,33 @@ def true_tree_bipartitions(tree: dict, names: List[str]) -> set:
 
     descend(tree)
     return bips
+
+
+def lowest_residues(aln, cells: np.ndarray, k: int) -> dict:
+    """The ``k`` scored residues with the lowest per-residue score, as a residue
+    mask — the residue-level mask that removes as many residues as a given
+    column mask did. Unscored (nan) residues are never picked."""
+    from craic.domain import residue_index
+    scored = [(cells[si, c], si, r) for si, row in enumerate(aln.rows)
+              for c, r in enumerate(residue_index(row))
+              if r >= 0 and cells[si, c] == cells[si, c]]
+    scored.sort(key=lambda t: t[0])
+    out: dict = {}
+    for _score, si, r in scored[:max(0, k)]:
+        out.setdefault(aln.ids[si], []).append(r)
+    return out
+
+
+def random_residues(aln, k: int, rng) -> dict:
+    """``k`` residues drawn uniformly at random, as a residue mask (the null)."""
+    every = [(si, r) for si, row in enumerate(aln.rows)
+             for r in range(sum(ch != "-" for ch in row))]
+    pick = rng.choice(len(every), size=min(k, len(every)), replace=False) if every else []
+    out: dict = {}
+    for i in pick:
+        si, r = every[int(i)]
+        out.setdefault(aln.ids[si], []).append(r)
+    return out
 
 
 def rf_distance(true_bips: set, inf_bips: set, normalized: bool = True) -> float:

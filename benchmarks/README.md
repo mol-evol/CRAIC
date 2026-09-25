@@ -55,6 +55,11 @@ python benchmarks/run_benchmark.py --sim \
 - `--perturbation` uses the combined consistency+perturbation reliability score
   instead of consistency alone (slower; the guide-tree bootstrap re-aligns many
   times per column set).
+- `--tree ml` measures tree error with maximum-likelihood trees (IQ-TREE 2 on
+  your `PATH`, JC+G4 — the simulating model) instead of neighbour-joining. Much
+  slower; the paper runs it at `--divergence 0.25 0.5`.
+- `--engines builtin mafft` restricts any run to the named engines — for
+  example to re-run one aligner after a fix without re-running the others.
 
 Each `(condition x replicate x aligner)` becomes one CSV row.
 
@@ -170,7 +175,11 @@ A CSV with one row per run and a printed summary of means per aligner. Columns:
 | `acc_retained_gap` | the same, for a gap-fraction mask removing the same number of columns |
 | `mask_z` | (`acc_retained` − `acc_retained_random`) in units of the random-mask standard deviation |
 | `n_masked`, `n_cols` | columns dropped by the mask, and total |
-| `rf_full`, `rf_masked` | normalised Robinson-Foulds distance of the NJ tree to the true topology, before / after masking (simulation only) |
+| `rf_full`, `rf_masked` | normalised Robinson-Foulds distance of the tree (NJ, or ML with `--tree ml`) to the true topology, before / after masking columns (simulation only) |
+| `rf_resid` | the same, with every residue scoring below the threshold masked as missing data and all columns kept |
+| `rf_resid_matched` | the same, masking the lowest-scoring residues — exactly as many as the column mask removed |
+| `rf_resid_random` | the same, masking that many residues at random (mean of 20 draws for NJ, 5 for ML) |
+| `n_res`, `n_res_colmask`, `n_res_resid` | residues in the alignment, removed by the column mask, and masked by the threshold residue mask |
 
 **Reliability works** if `rel_auc > 0.5`.
 

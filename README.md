@@ -12,7 +12,10 @@ multiple sequence alignments. It treats the alignment not as settled truth but a
 hypothesis you can stress-test, especially in the ambiguously aligned regions where
 downstream phylogenetics so often goes quietly wrong.
 
-**Install:** `pip install craic-msa` then run `craic`.  ·  **Docs:** <https://mol-evol.github.io/craic/>
+**Install:** `pip install craic-msa` then run `craic`.  ·  **Website:** <https://mol-evol.github.io/craic/>
+
+Written by [James McInerney](https://mol-evol.github.io/), University of Liverpool.
+If you use CRAIC, please [cite it](#citation).
 
 It also runs headless: `craic score`, `craic mask`, `craic align`, `craic trim` and
 `craic simulate` need no display and never import Qt, so the same reliability
@@ -154,7 +157,7 @@ craic/
   domain.py         canonical model + nt / codon / aa projection, genetic codes
   io.py             FASTA / PHYLIP / Clustal / Stockholm / NEXUS
   progressive.py    built-in progressive aligner (always available)
-  engines.py        AlignerEngine interface + MAFFT/MUSCLE/Clustal/PRANK wrappers
+  engines.py        AlignerEngine interface + external aligner wrappers
                     + a codon-aware (translate→align→back-translate) decorator
   evaluate.py       accuracy against a known-true reference (SP, TC, per-column)
   simulate.py       ground-truth simulator: sequences whose alignment is known
@@ -223,9 +226,11 @@ realignment sandbox and posterior explorer; single-click a residue to probe it.
 ## Optional: external aligners
 
 CRAIC auto-detects any of these on your `PATH` and offers them in the engine menu and the
-disagreement comparison: **MAFFT**, **MUSCLE**, **Clustal Omega**, **PRANK**. None are
-required — the built-in aligner always works. Coding data can be aligned in amino-acid
-space (translate → align amino acids → back-translate) via the *align as protein* checkbox.
+disagreement comparison: **MAFFT**, **MUSCLE**, **Clustal Omega**, **ProbCons**, **PRANK**,
+**ClustalW**. None are required — the built-in aligner always works. Each engine's settings
+(gap costs, matrices, strategies) are behind the ⚙ button, or `--param` on the command line.
+Coding data can be aligned in amino-acid space (translate → align amino acids →
+back-translate) via the *align as protein* checkbox.
 
 ## Examples
 
@@ -298,9 +303,16 @@ Bug reports, ideas, and pull requests are welcome — see
 
 ## Citation
 
-If you use CRAIC in your research, please cite it using the metadata in
-[`CITATION.cff`](CITATION.cff) (GitHub's "Cite this repository" button generates a
-formatted citation from it).
+If you use CRAIC in your research, please cite:
+
+> McInerney J. 2026. CRAIC: interactive interrogation of multiple sequence alignment
+> uncertainty. bioRxiv preprint (link to follow).
+
+The paper is under review; this will become the journal citation when it is
+published. GitHub's "Cite this repository" button gives the same citation in other
+formats, from [`CITATION.cff`](CITATION.cff). The
+[About page](https://mol-evol.github.io/craic/about/) on the website always has the
+current version.
 
 ## License
 

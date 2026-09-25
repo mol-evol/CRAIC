@@ -5,22 +5,51 @@
 CRAIC discovers engines at startup: the built-in aligner is always present, and each external
 tool is offered if its binary is found on your `PATH`.
 
-| Engine | Requires | How CRAIC runs it | Tunable parameters (⚙) |
-| --- | --- | --- | --- |
-| **CRAIC built-in (progressive)** | nothing | k-mer distances → UPGMA order → Gotoh profile alignment. See [Concepts](../concepts.md). Always available. | gap open (−6), gap extend (−0.5) |
-| **MAFFT** | `mafft` | `mafft <strategy> --op <op> --ep <ep> --quiet` | strategy (auto / L-INS-i / G-INS-i / E-INS-i / FFT-NS-2), `--op` (1.53), `--ep` (0.0) |
-| **MUSCLE** | `muscle` | tries `muscle -align IN -output OUT` (v5), then `muscle -in IN -out OUT` (v3) | — (v5 exposes none on the CLI) |
-| **Clustal Omega** | `clustalo` | `clustalo -i IN -o OUT --force --outfmt=fasta` | combined iterations (0 = default) |
-| **PRANK (phylogeny-aware)** | `prank` | `prank -d=IN -o=OUT` (`-DNA` added for nucleotides) | gap rate (0.025), gap extension (0.5) |
+| Engine | Requires | How CRAIC runs it |
+| --- | --- | --- |
+| **CRAIC built-in (progressive)** | nothing | ProbCons-style pair-HMM posteriors → consistency → progressive alignment by posterior decoding. See [Concepts](../concepts.md). Always available. |
+| **MAFFT** | `mafft` | `mafft <strategy> --op --ep --lop --lep <matrix> --quiet` |
+| **MUSCLE** | `muscle` | `muscle -align IN -output OUT` (v5; `-super5`, `-perm`, `-perturb` when set), falling back to `muscle -in IN -out OUT` (v3) |
+| **Clustal Omega** | `clustalo` | `clustalo -i IN -o OUT --force --outfmt=fasta` |
+| **ProbCons** | `probcons` | `probcons IN` — protein only |
+| **PRANK (phylogeny-aware)** | `prank` | `prank -d=IN -o=OUT` (`-DNA` added for nucleotides) |
+| **ClustalW** | `clustalw2` or `clustalw` | `clustalw2 -INFILE=IN -OUTFILE=OUT -OUTPUT=FASTA -TYPE=…` |
 
 ### Parameters
 
-The **⚙** button next to the engine dropdown opens a per-engine settings dialog (gap costs,
-MAFFT strategy, and so on) with a **Restore Defaults** button. Choices are remembered per engine
-for the session. They apply both when you press **Align** and when the **Aligner agreement**
-track re-runs every installed engine — so a comparison reflects the exact settings you've dialled
-in, while leaving you free to tweak one engine without touching the others. The alignment's
-**History** records the parameters each run used.
+The **⚙** button next to the engine dropdown opens a settings dialog for the selected engine,
+with a **Restore Defaults** button; hover over a field for what it does and its range. The
+dialog shows only the settings that apply to the sequences the engine will be handed: with
+nucleotides it hides protein matrices, and with **align as protein** ticked it hides the DNA
+settings, since the engine then sees amino acids. Hidden settings keep their values. Blank
+fields say what the tool will use for that kind of data. On the
+command line the same settings are `--param KEY=VALUE` (see
+[`craic align`](command-line.md#craic-align)), and `craic engines` lists every key.
+
+| Engine | Settings (key: default) |
+| --- | --- |
+| Built-in | compute level `effort`: med · gap open probability `delta`: *estimated from the data* · gap extension probability `epsilon`: *estimated from the data* · protein `matrix`: BLOSUM45 (also 50, 62, 80, 90) · `consistency_iters`, `refine_iters`: *set by the compute level* |
+| MAFFT | `strategy`: auto (L-INS-i, G-INS-i, E-INS-i, FFT-NS-2) · `op`: 1.53 · `ep`: 0.0 · local-pair `lop`: −2.0 and `lep`: 0.1 (used by L-INS-i and E-INS-i) · `maxiterate`: *set by the strategy* · protein `matrix`: BLOSUM62 (30, 45, 80, JTT, transmembrane) · DNA `kimura`: 200 PAM (20, 1) |
+| MUSCLE 5 | `algorithm`: align (or super5) · guide-tree `perm`: none (abc, acb, bca) · `perturb` seed: 0 = none. MUSCLE 5 has no gap penalties on its command line. |
+| Clustal Omega | combined `iterations`: 0 · `full` distance matrix: off · `max_guidetree_iterations`, `max_hmm_iterations`: *same as iterations*. Clustal Omega aligns profile HMMs and has no gap penalties to set. |
+| ProbCons | consistency passes `consistency`: 2 (0–5) · refinement `iterations`: 100 (0–1000) · `pretraining`: 0 (0–20). Its gap probabilities live in a parameter file and are not offered. |
+| PRANK | `gaprate`, `gapext`: *PRANK's default* (DNA 0.025 / 0.75, protein 0.005 / 0.5) · `F` (+F, keep insertions as insertions): off · `iterate`: 5 · `termgap`: off |
+| ClustalW | multiple-alignment `gapopen`, `gapext` and pairwise `pwgapopen`, `pwgapext`: *ClustalW's default* (protein 10 / 0.2 and 10 / 0.1, DNA 15 / 6.66) · protein `matrix` series: GONNET (BLOSUM, PAM, ID) · `dnamatrix`: IUB (CLUSTALW) · `gapdist`: 4 · `nopgap`, `nohgap` (turn off residue-specific and hydrophilic gap adjustment): off |
+
+A setting shown in *italics* is left blank by default, and CRAIC then passes nothing for it,
+so the tool uses its own value. That matters where the tool's default depends on the data:
+PRANK and ClustalW use different gap costs for DNA and protein, and one number filled in for
+both would be wrong for one of them.
+
+ClustalW is there for teaching. Its successors model gaps inside profile HMMs, so there is no
+single gap penalty to change; ClustalW keeps the textbook opening and extension costs, separately
+for the pairwise stage that builds the guide tree and the progressive stage, which makes it the
+engine to use to show what gap costs do.
+
+Settings are remembered per engine for the session and apply everywhere that engine runs: the
+**Align** button, **Realign around pinned columns**, the realignment sandbox, the ensemble
+co-occurrence figure and the **Aligner agreement** track. The alignment's **History** records the
+settings each run used, leaving out the ones left to the tool.
 
 Any engine can **align as protein** (the toolbar checkbox): CRAIC translates each
 sequence, aligns the amino acids with that engine, and back-translates onto codon
@@ -31,8 +60,8 @@ inner engine's parameters.
 
 !!! note "Aligner agreement with no external tools"
     If fewer than two engines are installed, the **Aligner agreement** track falls back to three
-    gap regimes of the built-in aligner — *gentle* (open −4, extend −0.3), *default* (−6, −0.5),
-    and *strict* (−10, −1.0) — which disagree precisely in the hard regions.
+    gap regimes of the built-in aligner — gap-open probability 0.005 (*rare gaps*), 0.03
+    (*default*) and 0.1 (*frequent gaps*) — which disagree precisely in the hard regions.
 
 ## File formats
 

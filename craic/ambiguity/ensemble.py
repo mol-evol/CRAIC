@@ -8,7 +8,7 @@ model believes; co-occurrence is what a crowd of real aligners actually did.
 
 from __future__ import annotations
 
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -38,11 +38,13 @@ def cooccurrence(
     codon_aware: bool = False,
     table: int = 1,
     level: Level = Level.NT,
+    params_by_key: Optional[dict] = None,
 ) -> Tuple[np.ndarray, str, str, int]:
     """Fraction of alternative alignments in which residue a of seq_i is aligned to
     residue b of seq_j. Returns (matrix [ni x nj], chars_i, chars_j, n_alternatives)."""
     alts = sandbox.alternatives(aln, col_start, col_stop, engines,
-                                codon_aware=codon_aware, table=table, level=level)
+                                codon_aware=codon_aware, table=table, level=level,
+                                params_by_key=params_by_key)
     id_i, id_j = aln.ids[seq_i], aln.ids[seq_j]
     sub_i = aln.rows[seq_i][col_start:col_stop].replace("-", "")
     sub_j = aln.rows[seq_j][col_start:col_stop].replace("-", "")

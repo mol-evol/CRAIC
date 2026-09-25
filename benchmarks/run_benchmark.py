@@ -74,9 +74,18 @@ def _r(x, nd: int = 4):
         return ""
 
 
+#: ``--tree``: how tree error is measured — "nj" (neighbour-joining on
+#: p-distances, the default and fast) or "ml" (IQ-TREE, JC+G4; slower).
+_TREE = "nj"
+
+#: ``--engines``: restrict a run to these engine keys (None = every engine found).
+#: Used to re-run one aligner after a fix without re-running the others.
+_ONLY: Optional[List[str]] = None
+
+
 def aligners():
-    """CRAIC built-in plus any external engine found on the PATH."""
-    return [e for e in engines.available_engines()]
+    """CRAIC built-in plus any external engine found on the PATH (or ``--engines``)."""
+    return [e for e in engines.available_engines() if _ONLY is None or e.key in _ONLY]
 
 
 def aligner_versions(engs) -> Dict[str, str]:
@@ -201,16 +210,55 @@ def evaluate(true_rows, names, true_tree, aln: Alignment, threshold: float,
            "n_masked": mg["n_masked"], "n_cols": mg["n_cols"]}
     if true_tree is not None and aln.n_seqs >= 4:
         tb = M.true_tree_bipartitions(true_tree, names)
-        row["rf_full"] = round(M.rf_distance(tb, M.nj_tree_bipartitions(names, inf_rows)), 4)
+        row["rf_full"] = _rf(tb, names, inf_rows)
         keep = rep.keep_mask(threshold)
         masked = rel_mod.apply_mask(aln, keep)
-        if masked.length >= aln.n_seqs:
-            row["rf_masked"] = round(M.rf_distance(tb, M.nj_tree_bipartitions(names, list(masked.rows))), 4)
-        else:
-            row["rf_masked"] = ""
+        row["rf_masked"] = _rf(tb, names, list(masked.rows)) if masked.length >= aln.n_seqs else ""
+        row.update(_residue_masking(aln, names, tb, rep, keep, threshold, do_perturbation))
     else:
         row["rf_full"] = row["rf_masked"] = ""
     return row
+
+
+def _rf(tb, names, rows, missing="-"):
+    """Normalised RF distance of the --tree tree to the truth, rounded; "" if no
+    tree could be built."""
+    build = M.ml_tree_bipartitions if _TREE == "ml" else M.nj_tree_bipartitions
+    bips = build(names, list(rows), missing=missing)
+    return "" if bips is None else round(M.rf_distance(tb, bips), 4)
+
+
+def _residue_masking(aln, names, tb, rep, keep, threshold, do_perturbation) -> dict:
+    """Tree error when the same reliability score masks residues instead of columns.
+
+    Three residue masks, all keeping every column, each written as missing data
+    (N) that the distance skips like a gap:
+
+    * ``rf_resid``: residues scoring below the threshold — what the GUI's
+      "Mask residues below the threshold" does;
+    * ``rf_resid_matched``: the lowest-scoring residues, exactly as many as the
+      column mask removed, so column and residue masking remove the same amount;
+    * ``rf_resid_random``: that many residues at random (mean of 20 draws) — the
+      null for the matched mask.
+    """
+    cells = rep.cell_combined if do_perturbation else rep.cell_consistency
+    n_res = sum(ch != "-" for r in aln.rows for ch in r)
+    n_col = sum(ch != "-" for c in range(aln.length) if not keep[c]
+                for ch in aln.column(c))
+
+    def rf(mask):
+        return _rf(tb, names, rel_mod.apply_residue_mask(aln, mask).rows, missing="-N")
+
+    below = rel_mod.residues_below(aln, cells, threshold)
+    matched = rf(M.lowest_residues(aln, cells, n_col))
+    rng = np.random.default_rng(0)
+    # 20 random draws with neighbour-joining; 5 with ML, which is slower
+    rand = [rf(M.random_residues(aln, n_col, rng)) for _ in range(5 if _TREE == "ml" else 20)]
+    rand = [x for x in rand if x != ""]
+    return {"n_res": n_res, "n_res_colmask": n_col,
+            "n_res_resid": rel_mod.mask_size(below),
+            "rf_resid": rf(below), "rf_resid_matched": matched,
+            "rf_resid_random": round(float(np.mean(rand)), 4) if rand else ""}
 
 
 def run_sim(args, writer, summary, done):
@@ -371,7 +419,9 @@ def print_summary(summary):
         print(f"  {aligner:32s} SP={m('sp')} TC={m('tc')} relAUC={m('rel_auc')} "
               f"kept={m('acc_retained')} vs random={m('acc_retained_random')} "
               f"vs gap={m('acc_retained_gap')} z={m('mask_z')} "
-              f"RF_full={m('rf_full')} RF_masked={m('rf_masked')}  (n={len(rows)})")
+              f"RF_full={m('rf_full')} RF_masked={m('rf_masked')} "
+              f"RF_resid={m('rf_resid')} RF_resid_matched={m('rf_resid_matched')} "
+              f"RF_resid_random={m('rf_resid_random')}  (n={len(rows)})")
     scopes = {r.get("score_scope") for r in summary}
     if scopes:
         print(f"  SP/TC scope: {', '.join(sorted(str(x) for x in scopes))}"
@@ -530,6 +580,11 @@ def main():
                          "(builtin, mafft, muscle, clustalo, prank). Repeat the comparison on a "
                          "foreign alignment: scoring CRAIC's reliability only on CRAIC's own "
                          "alignments flatters it.")
+    ap.add_argument("--tree", choices=["nj", "ml"], default="nj",
+                    help="tree error by neighbour-joining (default) or maximum likelihood "
+                         "(IQ-TREE 2 on the PATH, JC+G4; much slower)")
+    ap.add_argument("--engines", nargs="+", metavar="KEY",
+                    help="run only these engines (e.g. prank mafft); default: all found")
     ap.add_argument("--out", default="benchmark_results.csv")
     ap.add_argument("--quick", action="store_true", help="tiny preset for a smoke test")
     args = ap.parse_args()
@@ -540,6 +595,9 @@ def main():
     if not args.sim and not args.reference:
         args.sim = True
 
+    global _ONLY, _TREE
+    _ONLY = args.engines
+    _TREE = args.tree
     engines.ExternalAligner.timeout = args.engine_timeout or None
     engines.BuiltinProgressive.consistency_mem_gb = args.max_mem_gb
     engines.BuiltinProgressive.benchmark_effort = args.effort
@@ -548,12 +606,25 @@ def main():
         run_masking(args)
         return
 
+    fields = ["mode", "condition", "item", "aligner", "n_seqs", "n_cols",
+              "sp", "tc", "score_scope", "rel_auc", "pos_rate",
+              "acc_all", "acc_retained", "acc_retained_random", "acc_retained_gap",
+              "mask_z", "n_masked", "rf_full", "rf_masked", "n_res", "n_res_colmask",
+              "n_res_resid", "rf_resid", "rf_resid_matched", "rf_resid_random", "secs"]
     done = set()
     mode = "w"
     if os.path.exists(args.out) and os.path.getsize(args.out) > 0 and not args.fresh:
         with open(args.out) as fh:
-            for r in csv.DictReader(fh):
-                done.add((r.get("condition"), r.get("item"), r.get("aligner")))
+            old = list(csv.DictReader(fh))
+        for r in old:
+            done.add((r.get("condition"), r.get("item"), r.get("aligner")))
+        if old and list(old[0].keys()) != fields:
+            # Written by an older harness with other columns: rewrite it under the
+            # current header first, or the appended rows would not line up with it.
+            with open(args.out, "w", newline="") as fh:
+                w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
+                w.writeheader()
+                w.writerows(old)
         mode = "a"
         print(f"resuming: {len(done)} (item, aligner) results already in {args.out}")
 
@@ -561,10 +632,6 @@ def main():
     print("aligners:", ", ".join(e.label for e in engs))
     for label, ver in aligner_versions(engs).items():
         print(f"    {label:32s} {ver}")
-    fields = ["mode", "condition", "item", "aligner", "n_seqs", "n_cols",
-              "sp", "tc", "score_scope", "rel_auc", "pos_rate",
-              "acc_all", "acc_retained", "acc_retained_random", "acc_retained_gap",
-              "mask_z", "n_masked", "rf_full", "rf_masked", "secs"]
     summary: List[dict] = []
     with open(args.out, mode, newline="", buffering=1) as fh:
         writer = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
